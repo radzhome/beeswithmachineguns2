@@ -438,23 +438,9 @@ def _attack(params):
     Intended for use with multiprocessing.
     """
     print('Bee %i is joining the swarm.' % params['i'])
+    client = _paramiko_connect(params)
 
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-        pem_path = params.get('key_name') and _get_pem_path(params['key_name']) or None
-        print("Pem key is {}".format(pem_path))
-
-        if not os.path.isfile(pem_path):
-            client.load_system_host_keys()
-            client.connect(params['instance_name'], username=params['username'])
-        else:
-            client.connect(
-                params['instance_name'],
-                username=params['username'],
-                key_filename=pem_path)
-
         print("Bee {:d} is firing her machine gun. Bang bang!".format(params['i']))
 
         options = ''
@@ -506,7 +492,7 @@ def _attack(params):
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
         # Make sure we have ab
-        ab_install_command = 'sudo yum install httpd-tools -y'
+        ab_install_command = 'sudo yum install httpd-tools -y'  # TODO Move to up, and poll until done, then ready, default ami user?
         client.exec_command(ab_install_command)
 
         # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
@@ -1039,6 +1025,33 @@ def hurl_attack(url, n, c, **options):
             sys.exit(0)
 
 
+def _paramiko_connect(params):
+    """
+    Create ssh connection with client
+    :param params: dict, config params
+    :return: paramiko client, conn client
+    """
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    pem_path = params.get('key_name') and _get_pem_path(params['key_name']) or None
+    print("Pem key is {}".format(pem_path))
+
+    if not os.path.isfile(pem_path):
+        client.load_system_host_keys()
+        client.connect(params['instance_name'],
+                       username=params['username'],
+                       timeout=10
+                       )
+    else:
+        client.connect(
+            params['instance_name'],
+            username=params['username'],
+            key_filename=pem_path,
+            timeout=10)
+    return client
+
+
 def _hurl_attack(params):
     """
     Test the target URL with requests.
@@ -1048,19 +1061,9 @@ def _hurl_attack(params):
 
     print('Bee %i is joining the swarm.' % params['i'])
 
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client = _paramiko_connect(params)
 
-        pem_path = params.get('key_name') and _get_pem_path(params['key_name']) or None
-        if not os.path.isfile(pem_path):
-            client.load_system_host_keys()
-            client.connect(params['instance_name'], username=params['username'])
-        else:
-            client.connect(
-                params['instance_name'],
-                username=params['username'],
-                key_filename=pem_path)
+    try:
 
         print('Bee %i is firing her machine gun. Bang bang!' % params['i'])
 
@@ -1132,25 +1135,25 @@ def _hurl_attack(params):
         # paramiko's read() returns bytes which need to be converted back to a str
         hurl_results = IS_PY2 and stdout.read() or stdout.read().decode('utf-8')
 
-        #print output for each instance if -o/--long_output is supplied
+        # print output for each instance if -o/--long_output is supplied
         def _long_output():
             '''if long_output option,.. display info per bee instead of summarized version'''
             tabspace=''
             singletab=()
-            doubletabs=('seconds', 'connect-ms-min',
-                       'fetches','bytes-per-sec',
-                       'end2end-ms-min',
-                       'max-parallel', 'response-codes',
-                       'end2end-ms-max', 'connect-ms-max' )
-            trippletab=('bytes')
+            doubletabs = ('seconds', 'connect-ms-min',
+                          'fetches', 'bytes-per-sec',
+                          'end2end-ms-min',
+                          'max-parallel', 'response-codes',
+                          'end2end-ms-max', 'connect-ms-max')
+            trippletab= 'bytes'
             try:
-                print(("Bee: {}").format(params['instance_id']))
+                print("Bee: {}".format(params['instance_id']))
                 for k, v in list(response.items()):
                     if k == 'response-codes':
                         print(k)
                         tabspace='\t'
                         for rk, rv in list(v.items()):
-                            print(("{}{}:{}{}").format(tabspace, rk, tabspace+tabspace, rv))
+                            print("{}{}:{}{}".format(tabspace, rk, tabspace + tabspace, rv))
                         continue
                     if k in doubletabs:
                         tabspace='\t\t'
@@ -1158,11 +1161,12 @@ def _hurl_attack(params):
                         tabspace='\t\t\t'
                     else:
                         tabspace='\t'
-                    print(("{}:{}{}").format(k, tabspace, v))
+                    print("{}:{}{}".format(k, tabspace, v))
                 print("\n")
 
-            except:
-                print("Please check the url entered, also possible no requests were successful Line: 1018")
+            except Exception as e:
+                print("Please check the url entered, also possible no requests were successful Line: 1018, {}"
+                      "".format(e))
                 return None
 
         # create the response dict to return to hurl_attack()
@@ -1172,8 +1176,7 @@ def _hurl_attack(params):
             for k ,v in list(hurl_json.items()):
                 response[k] = v
 
-            # check if user wants output for seperate instances and Sdisplay if so
-            long_out_container=[]
+            # check if user wants output for separate instances and display if so
             if params['long_output']:
                 print(hurl_command)
                 print("\n", params['instance_id'] + "\n",params['instance_name'] + "\n" , hurl_results)
@@ -1186,7 +1189,8 @@ def _hurl_attack(params):
         finally:
             return response
 
-        print(hurl_json['response-codes'])
+        # TODO: Code is unreachable:
+        # print(hurl_json['response-codes'])
         response['request_time_cdf'] = []
         for row in csv.DictReader(stdout):
             row["Time in ms"] = float(row["Time in ms"])
@@ -1195,7 +1199,7 @@ def _hurl_attack(params):
             print('Bee %i lost sight of the target (connection timed out reading csv).' % params['i'])
             return None
 
-        print('Bee %i is out of ammo.' % params['i'])
+        print("Bee {:d} is out of ammo.".format(params['i']))
 
         client.close()
 
@@ -1210,7 +1214,6 @@ def _hurl_attack(params):
 
 def _hurl_summarize_results(results, params, csv_filename):
 
-    #summarized_results = dict()
     summarized_results = defaultdict(int)
     summarized_results['timeout_bees'] = [r for r in results if r is None]
     summarized_results['exception_bees'] = [r for r in results if type(r) == socket.error]
@@ -1319,56 +1322,56 @@ def _hurl_print_results(summarized_results):
     """
     if summarized_results['exception_bees']:
         print(
-            '     {:d} of your bees didn\'t make it to the action. They might be taking a little longer than normal to'
-            ' find their machine guns, or may have been terminated without using "bees down".'.format(
+            "     {:d} of your bees didn't make it to the action. They might be taking a little longer than normal to"
+            " find their machine guns, or may have been terminated without using \"bees down\".".format(
                 summarized_results['num_exception_bees']))
 
     if summarized_results['timeout_bees']:
-        print('     Target timed out without fully responding to %i bees.' % summarized_results['num_timeout_bees'])
+        print("     Target timed out without fully responding to %i bees." % summarized_results['num_timeout_bees'])
 
     if summarized_results['num_complete_bees'] == 0:
-        print('     No bees completed the mission. Apparently your bees are peace-loving hippies.')
+        print("     No bees completed the mission. Apparently your bees are peace-loving hippies.")
         return
-    print('\nSummarized Results')
-    print('     Total bytes:\t\t%i' % summarized_results['total_bytes'])
-    print('     Seconds:\t\t\t%i' % summarized_results['seconds'])
-    print('     Connect-ms-max:\t\t%f' % summarized_results['connect-ms-max'])
-    print('     1st-resp-ms-max:\t\t%f' % summarized_results['1st-resp-ms-max'])
-    print('     1st-resp-ms-mean:\t\t%f' % summarized_results['1st-resp-ms-mean'])
-    print('     Fetches/sec mean:\t\t%f' % summarized_results['fetches-per-sec'])
-    print('     connect-ms-min:\t\t%f' % summarized_results['connect-ms-min'])
-    print('     Total fetches:\t\t%i' % summarized_results['total-fetches'])
-    print('     bytes/sec mean:\t\t%f' % summarized_results['bytes-per-second-mean'])
-    print('     end2end-ms-min mean:\t%f' % summarized_results['end2end-ms-min'])
-    print('     mean-bytes-per-conn:\t%f' % summarized_results['mean-bytes-per-conn'])
-    print('     connect-ms-mean:\t\t%f' % summarized_results['connect-ms-mean'])
-    print('\nResponse Codes:')
+    print("\nSummarized Results")
+    print("     Total bytes:\t\t%i" % summarized_results['total_bytes'])
+    print("     Seconds:\t\t\t%i" % summarized_results['seconds'])
+    print("     Connect-ms-max:\t\t%f" % summarized_results['connect-ms-max'])
+    print("     1st-resp-ms-max:\t\t%f" % summarized_results['1st-resp-ms-max'])
+    print("     1st-resp-ms-mean:\t\t%f" % summarized_results['1st-resp-ms-mean'])
+    print("     Fetches/sec mean:\t\t%f" % summarized_results['fetches-per-sec'])
+    print("     connect-ms-min:\t\t%f" % summarized_results['connect-ms-min'])
+    print("     Total fetches:\t\t%i" % summarized_results['total-fetches'])
+    print("     bytes/sec mean:\t\t%f" % summarized_results['bytes-per-second-mean'])
+    print("     end2end-ms-min mean:\t%f" % summarized_results['end2end-ms-min'])
+    print("     mean-bytes-per-conn:\t%f" % summarized_results['mean-bytes-per-conn'])
+    print("     connect-ms-mean:\t\t%f" % summarized_results['connect-ms-mean'])
+    print("\nResponse Codes:")
 
-    print('     2xx:\t\t\t%i' % summarized_results['total_number_of_200s'])
-    print('     3xx:\t\t\t%i' % summarized_results['total_number_of_300s'])
-    print('     4xx:\t\t\t%i' % summarized_results['total_number_of_400s'])
-    print('     5xx:\t\t\t%i' % summarized_results['total_number_of_500s'])
+    print("     2xx:\t\t\t%i" % summarized_results['total_number_of_200s'])
+    print("     3xx:\t\t\t%i" % summarized_results['total_number_of_300s'])
+    print("     4xx:\t\t\t%i" % summarized_results['total_number_of_400s'])
+    print("     5xx:\t\t\t%i" % summarized_results['total_number_of_500s'])
     print()
 
     if 'rps_bounds' in summarized_results and summarized_results['rps_bounds'] is not None:
-        print('     Requests per second:\t%f [#/sec] (upper bounds)' % summarized_results['rps_bounds'])
+        print("     Requests per second:\t%f [#/sec] (upper bounds)" % summarized_results['rps_bounds'])
 
     if 'tpr_bounds' in summarized_results and summarized_results['tpr_bounds'] is not None:
-        print('     Time per request:\t\t%f [ms] (lower bounds)' % summarized_results['tpr_bounds'])
+        print("     Time per request:\t\t%f [ms] (lower bounds)" % summarized_results['tpr_bounds'])
 
     if 'performance_accepted' in summarized_results:
-        print('     Performance check:\t\t%s' % summarized_results['performance_accepted'])
+        print("     Performance check:\t\t%s" % summarized_results['performance_accepted'])
 
     if summarized_results['mean_response'] < 500:
-        print('Mission Assessment: Target crushed bee offensive.')
+        print("Mission Assessment: Target crushed bee offensive.")
     elif summarized_results['mean_response'] < 1000:
-        print('Mission Assessment: Target successfully fended off the swarm.')
+        print("Mission Assessment: Target successfully fended off the swarm.")
     elif summarized_results['mean_response'] < 1500:
-        print('Mission Assessment: Target wounded, but operational.')
+        print("Mission Assessment: Target wounded, but operational.")
     elif summarized_results['mean_response'] < 2000:
-        print('Mission Assessment: Target severely compromised.')
+        print("Mission Assessment: Target severely compromised.")
     else:
-        print('Mission Assessment: Swarm annihilated target.')
+        print("Mission Assessment: Swarm annihilated target.")
 
 
 def _get_new_state_file_name(zone):

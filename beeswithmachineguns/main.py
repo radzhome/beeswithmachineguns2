@@ -85,8 +85,8 @@ commands:
                         action='store', dest='type', type='string', default='t3.micro',
                         help="The instance-type to use for each server (default: t3.micro).")
     up_group.add_option('-l', '--login',  metavar="LOGIN",  nargs=1,
-                        action='store', dest='login', type='string', default='newsapps',
-                        help="The ssh username name to use to connect to the new servers (default: newsapps).")
+                        action='store', dest='login', type='string', default='ec2-user',
+                        help="The ssh username name to use to connect to the new servers (default: ec2-user).")
     up_group.add_option('-v', '--subnet', metavar="SUBNET",  nargs=1,
                         action='store', dest='subnet', type='string', default=None,
                         help="The vpc subnet id in which the instances should be launched. (default: None).")

@@ -1,7 +1,7 @@
 h4. Bees with Machine Guns!
 
-# TODO: default ami
-# TODO: install ab
+# TODO: default ami -> grab via boto3 api (describe_images)
+# TODO: install ab, hurl
 
 A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).
 
@@ -22,7 +22,7 @@ pip install https://github.com/radzhome/beeswithmachineguns/archive/master.zip
 h2. Installation for developers (w/ virtualenv + virtualenvwrapper)
 
 <pre>
-git clone git://github.com/newsapps/beeswithmachineguns.git
+git clone git://github.com/radzhome/beeswithmachineguns2.git
 cd beeswithmachineguns
 mkvirtualenv --no-site-packages beesenv
 easy_install pip
@@ -215,7 +215,7 @@ Options:
                         t3.micro).
     -l LOGIN, --login=LOGIN
                         The ssh username name to use to connect to the new
-                        servers (default: newsapps).
+                        servers (default: ec2-user).
     -v SUBNET, --subnet=SUBNET
                         The vpc subnet id (or name) in which the instances should be
                         launched. (default: None).
@@ -1037,7 +1037,7 @@ This is helpful in cases where BWMG crashes, EC2 instances are terminated outsid
 
 h2. Bugs
 
-Please log your bugs on the "Github issues tracker":http://github.com/newsapps/beeswithmachineguns/issues.
+Please log your bugs on the "Github issues tracker":http://github.com/radzhome/beeswithmachineguns2/issues.
 
 h2. Credits
 
