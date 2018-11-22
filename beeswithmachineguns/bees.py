@@ -505,14 +505,10 @@ def _attack(params):
             ['Time per request:', 'Requests per second: ', 'Failed requests: ', 'Connect: ', 'Receive: ',
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
-        # TODO: CHECK AB IS INSTALLED, IF NOT INSTALL it
-        # mkdir /usr/local/src/ab && cd $_
-        # yumdownloader httpd-tools
-        # rpm2cpio httpd-tools-*.amzn1.i686.rpm | cpio -idmv ./usr/bin/ab
-        # mv usr/bin/ab /usr/bin/
-        # rm -rf /usr/local/src/ab
-        # yum install apr-util
-        #
+        # Make sure we have ab
+        ab_install_command = 'sudo yum install httpd-tools -y'
+        client.exec_command(ab_install_command)
+
         # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
         # default image set to ? ami-0f552e0a86f08b660
         benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
