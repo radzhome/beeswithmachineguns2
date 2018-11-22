@@ -1,27 +1,7 @@
 #!/bin/env python
 
 """
-The MIT License
-
-Copyright (c) 2010 The Chicago Tribune & Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+Main bees module for bringing bees up and down and attacking
 """
 from __future__ import division
 from __future__ import print_function
@@ -65,6 +45,7 @@ STATE_FILENAME = os.path.expanduser('~/.bees')
 
 # Utilities
 
+
 @contextmanager
 def _redirect_stdout(outfile=None):
     save_stdout = sys.stdout
@@ -75,22 +56,22 @@ def _redirect_stdout(outfile=None):
 
 def _read_server_list(*mr_zone):
     if len(mr_zone) > 0:
-        MR_STATE_FILENAME = _get_new_state_file_name(mr_zone[-1])
+        mr_state_filename = _get_new_state_file_name(mr_zone[-1])
     else:
-        MR_STATE_FILENAME = STATE_FILENAME
-    if not os.path.isfile(MR_STATE_FILENAME):
-        return (None, None, None, None)
+        mr_state_filename = STATE_FILENAME
+    if not os.path.isfile(mr_state_filename):
+        return None, None, None, None
 
-    with open(MR_STATE_FILENAME, 'r') as f:
+    with open(mr_state_filename, 'r') as f:
         username = f.readline().strip()
         key_name = f.readline().strip()
         zone = f.readline().strip()
         text = f.read()
         instance_ids = [i for i in text.split('\n') if i != '']
 
-        print(('Read {} bees from the roster: {}').format(len(instance_ids), zone))
+        print('Read {} bees from the roster: {}'.format(len(instance_ids), zone))
 
-    return (username, key_name, zone, instance_ids)
+    return username, key_name, zone, instance_ids
 
 
 def _write_server_list(username, key_name, zone, instances):
@@ -114,8 +95,17 @@ def _get_region(zone):
 
 
 def _get_security_group_id(connection, security_group_name, subnet):
-    """Takes a security group name and returns the ID.  If the name cannot be found, the name will be attempted
-    as an ID.  The first group found by this name or ID will be used."""
+    """
+    Takes a security group name and
+    returns the ID. If the name cannot be
+    found, the name will be attempted
+    as an ID.  The first group found by
+    this name or ID will be used.)
+    :param connection:
+    :param security_group_name:
+    :param subnet:
+    :return:
+    """
     if not security_group_name:
         print('The bees need a security group to run under. Need to open a port from where you are to the target '
               'subnet.')
@@ -228,7 +218,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         # it can take a few seconds before the spot requests are fully processed
         time.sleep(5)
 
-        instances = _wait_for_spot_request_fulfillment(ec2_connection, spot_requests)
+        instances = _wait_for_spot_request_fulfillment(ec2_connection, spot_requests)  # TODO unexpected
     else:
         print('Attempting to call up %i bees.' % count)
 
@@ -266,7 +256,8 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     if instance_ids:
         existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
-        existing_instances = [instance for reservation in existing_reservations for instance in reservation.instances if instance.state == 'running']
+        existing_instances = [instance for reservation in existing_reservations for
+                              instance in reservation.instances if instance.state == 'running']
         list(map(instances.append, existing_instances))
         dead_instances = [i for i in instance_ids if i not in [j.id for j in existing_instances]]
         list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
@@ -300,10 +291,11 @@ def report():
     Report the status of the load testing servers.
     """
     def _check_instances():
-        """helper function to check multiple region files ~/.bees.*
+        """
+        helper function to check multiple region files ~/.bees.*
         """
         if not instance_ids:
-            print('No bees have been mobilized.')
+            print("No bees have been mobilized.")
             return
 
         ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
@@ -316,29 +308,32 @@ def report():
             instances.extend(reservation.instances)
 
         for instance in instances:
-            print('Bee %s: %s @ %s' % (instance.id, instance.state, instance.ip_address))
+            print("Bee {}: {} @ {}".format(instance.id, instance.state, instance.ip_address))
 
     for i in _get_existing_regions():
         username, key_name, zone, instance_ids = _read_server_list(i)
         _check_instances()
+
 
 def down(*mr_zone):
     """
     Shutdown the load testing server.
     """
     def _check_to_down_it():
-        '''check if we can bring down some bees'''
+        """
+        check if we can bring down some bees
+        """
         username, key_name, zone, instance_ids = _read_server_list(region)
 
         if not instance_ids:
-            print('No bees have been mobilized.')
+            print("No bees have been mobilized.")
             return
 
-        print('Connecting to the hive.')
+        print("Connecting to the hive.")
 
         ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
 
-        print(('Calling off the swarm for {}.').format(region))
+        print("Calling off the swarm for {}.".format(region))
 
         terminated_instance_ids = ec2_connection.terminate_instances(
             instance_ids=instance_ids)
@@ -347,19 +342,21 @@ def down(*mr_zone):
 
         _delete_server_list(zone)
 
-
     if len(mr_zone) > 0:
+        # TODO: not used
         username, key_name, zone, instance_ids = _read_server_list(mr_zone[-1])
     else:
         for region in _get_existing_regions():
             _check_to_down_it()
 
-def _wait_for_spot_request_fulfillment(conn, requests, fulfilled_requests = []):
+
+def _wait_for_spot_request_fulfillment(conn, requests, fulfilled_requests=None):
     """
     Wait until all spot requests are fulfilled.
-
-    Once all spot requests are fulfilled, return a list of corresponding spot instances.
+    Once all spot requests are fulfilled, return a
+    list of corresponding spot instances.
     """
+    fulfilled_requests = fulfilled_requests or []
     if len(requests) == 0:
         reservations = conn.get_all_instances(instance_ids = [r.instance_id for r in fulfilled_requests])
         return [r.instances[0] for r in reservations]
@@ -373,12 +370,13 @@ def _wait_for_spot_request_fulfillment(conn, requests, fulfilled_requests = []):
             fulfilled_requests.append(req)
             print("spot bee `{}` joined the swarm.".format(req.instance_id))
 
-    return _wait_for_spot_request_fulfillment(conn, [r for r in requests if r not in fulfilled_requests], fulfilled_requests)
+    return _wait_for_spot_request_fulfillment(conn, [r for r in requests if r not in
+                                                     fulfilled_requests], fulfilled_requests)
+
 
 def _sting(params):
     """
     Request the target URL for caching.
-
     Intended for use with multiprocessing.
     """
     url = params['url']
@@ -397,9 +395,10 @@ def _sting(params):
             with open(post_file, 'r') as content_file:
                 content = content_file.read()
             if IS_PY2:
-                request.add_data(content)
+                request.add_data(content)  # TODO
             else:
-                # python3 removed add_data method from Request and added data attribute, either bytes or iterable of bytes
+                # python3 removed add_data method from Request and added data attribute,
+                # either bytes or iterable of bytes
                 request.data = bytes(content.encode('utf-8'))
         except IOError:
             print('bees: error: The post file you provided doesn\'t exist.')
@@ -456,7 +455,7 @@ def _attack(params):
                 username=params['username'],
                 key_filename=pem_path)
 
-        print('Bee %i is firing her machine gun. Bang bang!' % params['i'])
+        print("Bee {:d} is firing her machine gun. Bang bang!".format(params['i']))
 
         options = ''
         if params['headers'] is not '':
@@ -478,8 +477,9 @@ def _attack(params):
 
         if params['post_file']:
             pem_file_path=_get_pem_path(params['key_name'])
-            scpCommand = "scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:~/" % (pem_file_path, params['post_file'], params['username'], params['instance_name'])
-            os.system(scpCommand)
+            scp_command = "scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:~/" \
+                          "".format((pem_file_path, params['post_file'], params['username'], params['instance_name']))
+            os.system(scp_command)
             options += ' -p ~/%s' % params['post_file']
 
         if params['keep_alive']:
@@ -537,12 +537,17 @@ def _attack(params):
         response['failed_requests_length'] = 0
         response['failed_requests_exceptions'] = 0
         if float(failed_requests.group(1)) > 0:
-            failed_requests_detail = re.search('(Connect: [0-9.]+, Receive: [0-9.]+, Length: [0-9.]+, Exceptions: [0-9.]+)', ab_results)
+            failed_requests_detail = re.search('(Connect: [0-9.]+, Receive: [0-9.]+, Length: [0-9.]+, '
+                                               'Exceptions: [0-9.]+)', ab_results)
             if failed_requests_detail:
-                response['failed_requests_connect'] = float(re.search('Connect:\s+([0-9.]+)', failed_requests_detail.group(0)).group(1))
-                response['failed_requests_receive'] = float(re.search('Receive:\s+([0-9.]+)', failed_requests_detail.group(0)).group(1))
-                response['failed_requests_length'] = float(re.search('Length:\s+([0-9.]+)', failed_requests_detail.group(0)).group(1))
-                response['failed_requests_exceptions'] = float(re.search('Exceptions:\s+([0-9.]+)', failed_requests_detail.group(0)).group(1))
+                response['failed_requests_connect'] = float(re.search('Connect:\s+([0-9.]+)',
+                                                                      failed_requests_detail.group(0)).group(1))
+                response['failed_requests_receive'] = float(re.search('Receive:\s+([0-9.]+)',
+                                                                      failed_requests_detail.group(0)).group(1))
+                response['failed_requests_length'] = float(re.search('Length:\s+([0-9.]+)',
+                                                                     failed_requests_detail.group(0)).group(1))
+                response['failed_requests_exceptions'] = float(re.search('Exceptions:\s+([0-9.]+)',
+                                                                         failed_requests_detail.group(0)).group(1))
 
         complete_requests_search = re.search('Complete\ requests:\s+([0-9]+)', ab_results)
 
@@ -586,7 +591,8 @@ def _summarize_results(results, params, csv_filename):
     summarized_results['complete_bees'] = [r for r in results if r is not None and type(r) != socket.error]
     summarized_results['timeout_bees_params'] = [p for r, p in zip(results, params) if r is None]
     summarized_results['exception_bees_params'] = [p for r, p in zip(results, params) if type(r) == socket.error]
-    summarized_results['complete_bees_params'] = [p for r, p in zip(results, params) if r is not None and type(r) != socket.error]
+    summarized_results['complete_bees_params'] = [p for r, p in zip(results, params) if
+                                                  r is not None and type(r) != socket.error]
     summarized_results['num_timeout_bees'] = len(summarized_results['timeout_bees'])
     summarized_results['num_exception_bees'] = len(summarized_results['exception_bees'])
     summarized_results['num_complete_bees'] = len(summarized_results['complete_bees'])
@@ -644,14 +650,17 @@ def _summarize_results(results, params, csv_filename):
             summarized_results['performance_accepted'] = False
 
     if summarized_results['rps_bounds'] is not None:
-        if summarized_results['mean_requests'] > summarized_results['rps_bounds'] and summarized_results['performance_accepted'] is True or None:
+        if summarized_results['mean_requests'] > summarized_results['rps_bounds'] and \
+                summarized_results['performance_accepted'] is True or None:
             summarized_results['performance_accepted'] = True
         else:
             summarized_results['performance_accepted'] = False
 
-    summarized_results['request_time_cdf'] = _get_request_time_cdf(summarized_results['total_complete_requests'], summarized_results['complete_bees'])
+    summarized_results['request_time_cdf'] = _get_request_time_cdf(summarized_results['total_complete_requests'],
+                                                                   summarized_results['complete_bees'])
     if csv_filename:
-        _create_request_time_cdf_csv(results, summarized_results['complete_bees_params'], summarized_results['request_time_cdf'], csv_filename)
+        _create_request_time_cdf_csv(results, summarized_results['complete_bees_params'],
+                                     summarized_results['request_time_cdf'], csv_filename)
 
     return summarized_results
 
@@ -672,7 +681,7 @@ def _create_request_time_cdf_csv(results, complete_bees_params, request_time_cdf
                 row = [i, request_time_cdf[i]] if i < len(request_time_cdf) else [i,float("inf")]
                 for r in results:
                     if r is not None:
-                    	row.append(r['request_time_cdf'][i]["Time in ms"])
+                        row.append(r['request_time_cdf'][i]["Time in ms"])
                 writer.writerow(row)
 
 
@@ -703,8 +712,9 @@ def _print_results(summarized_results):
     Print summarized load-testing results.
     """
     if summarized_results['exception_bees']:
-        print('     %i of your bees didn\'t make it to the action. They might be taking a little longer than normal to'
-              ' find their machine guns, or may have been terminated without using "bees down".' % summarized_results['num_exception_bees'])
+        print("     %i of your bees didn't make it to the action. They might be taking a little longer than normal to"
+              " find their machine guns, or may have been terminated without using \"bees down\"."
+              "".format(summarized_results['num_exception_bees']))
 
     if summarized_results['timeout_bees']:
         print('     Target timed out without fully responding to %i bees.' % summarized_results['num_timeout_bees'])
@@ -770,7 +780,8 @@ def attack(url, n, c, **options):
         try:
             stream = open(csv_filename, 'w')
         except IOError as e:
-            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different filename and try again." % csv_filename)
+            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different "
+                          "filename and try again." % csv_filename)
 
     if not instance_ids:
         print('No bees are ready to attack.')
@@ -792,19 +803,22 @@ def attack(url, n, c, **options):
     instance_count = len(instances)
 
     if n < instance_count * 2:
-        print('bees: error: the total number of requests must be at least %d (2x num. instances)' % (instance_count * 2))
+        print("bees: error: the total number of requests must be at least %d (2x num. instances)"
+              "".format((instance_count * 2)))
         return
     if c < instance_count:
         print('bees: error: the number of concurrent requests must be at least %d (num. instances)' % instance_count)
         return
     if n < c:
-        print('bees: error: the number of concurrent requests (%d) must be at most the same as number of requests (%d)' % (c, n))
+        print("bees: error: the number of concurrent requests ({:d}) must be at most the same as number of "
+              "requests ({:d})".format(c, n))
         return
 
     requests_per_instance = int(old_div(float(n), instance_count))
     connections_per_instance = int(old_div(float(c), instance_count))
 
-    print('Each of %i bees will fire %s rounds, %s at a time.' % (instance_count, requests_per_instance, connections_per_instance))
+    print("Each of {:d} bees will fire {} rounds, {} at a time.".format(instance_count, requests_per_instance,
+                                                                        connections_per_instance))
 
     params = []
 
@@ -812,14 +826,13 @@ def attack(url, n, c, **options):
     url_count = len(urls)
 
     if url_count > instance_count:
-        print('bees: warning: more urls given than instances. last urls will be ignored.')
+        print("bees: warning: more urls given than instances. last urls will be ignored.")
 
     for i, instance in enumerate(instances):
         params.append({
             'i': i,
             'instance_id': instance.id,
-            'instance_name': instance.private_ip_address if instance.public_dns_name == "" else instance.public_dns_name,
-            # 'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
+            'instance_name': instance.private_ip_address if not instance.public_dns_name else instance.public_dns_name,
             'url': urls[i % url_count],
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -891,17 +904,18 @@ def hurl_attack(url, n, c, **options):
         try:
             stream = open(csv_filename, 'w')
         except IOError as e:
-            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different filename and try again." % csv_filename)
+            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a "
+                          "different filename and try again." % csv_filename)
 
     if not instance_ids:
-        print('No bees are ready to attack.')
+        print("No bees are ready to attack.")
         return
 
-    print('Connecting to the hive.')
+    print("Connecting to the hive.")
 
     ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
 
-    print('Assembling bees.')
+    print("Assembling bees.")
 
     reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
 
@@ -913,19 +927,23 @@ def hurl_attack(url, n, c, **options):
     instance_count = len(instances)
 
     if n < instance_count * 2:
-        print('bees: error: the total number of requests must be at least %d (2x num. instances)' % (instance_count * 2))
+        print("bees: error: the total number of requests must be at least {:d} (2x num. instances)"
+              "".format(instance_count * 2))
         return
     if c < instance_count:
-        print('bees: error: the number of concurrent requests must be at least %d (num. instances)' % instance_count)
+        print("bees: error: the number of concurrent requests must be at least {:d} (num. instances)"
+              "".format(instance_count))
         return
     if n < c:
-        print('bees: error: the number of concurrent requests (%d) must be at most the same as number of requests (%d)' % (c, n))
+        print("bees: error: the number of concurrent requests ({:d}) must be at most the same as number of "
+              "requests ({:d})".format(c, n))
         return
 
     requests_per_instance = int(old_div(float(n), instance_count))
     connections_per_instance = int(old_div(float(c), instance_count))
 
-    print('Each of %i bees will fire %s rounds, %s at a time.' % (instance_count, requests_per_instance, connections_per_instance))
+    print("Each of {:d} bees will fire {} rounds, {} at a time.".format(instance_count, requests_per_instance,
+                                                                        connections_per_instance))
 
     params = []
 
@@ -933,7 +951,6 @@ def hurl_attack(url, n, c, **options):
         params.append({
             'i': i,
             'instance_id': instance.id,
-            # 'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
             'instance_name': instance.private_ip_address if instance.public_dns_name == "" else instance.public_dns_name,
             'url': url,
             'concurrent_requests': connections_per_instance,
@@ -972,7 +989,8 @@ def hurl_attack(url, n, c, **options):
             if IS_PY2:
                 request.add_data(content)
             else:
-                # python3 removed add_data method from Request and added data attribute, either bytes or iterable of bytes
+                # python3 removed add_data method from Request and added data attribute,
+                # either bytes or iterable of bytes
                 request.data = bytes(content.encode('utf-8'))
         except IOError:
             print('bees: error: The post file you provided doesn\'t exist.')
@@ -988,7 +1006,7 @@ def hurl_attack(url, n, c, **options):
     # Ping url so it will be cached for testing
     dict_headers = {}
     if headers is not '':
-        dict_headers = headers = dict(j.split(':') for j in [i.strip() for i in headers.split(';') if i != ''])
+        dict_headers = dict(j.split(':') for j in [i.strip() for i in headers.split(';') if i != ''])
 
     if contenttype is not '':
         request.add_header("Content-Type", contenttype)
@@ -1008,7 +1026,6 @@ def hurl_attack(url, n, c, **options):
     # Spin up processes for connecting to EC2 instances
     pool = Pool(len(params))
     results = pool.map(_hurl_attack, params)
-
 
     summarized_results = _hurl_summarize_results(results, params, csv_filename)
     print('Offensive complete.')
@@ -1071,8 +1088,9 @@ def _hurl_attack(params):
 
         if params['post_file']:
             pem_file_path=_get_pem_path(params['key_name'])
-            scpCommand = "scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:~/" % (pem_file_path, params['post_file'], params['username'], params['instance_name'])
-            os.system(scpCommand)
+            scp_command = "scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:~/" \
+                         "".format((pem_file_path,params['post_file'], params['username'], params['instance_name']))
+            os.system(scp_command)
             options += ' -d ~/%s' % params['post_file']
 
         if params['cookies'] is not '':
@@ -1193,6 +1211,7 @@ def _hurl_attack(params):
         print()
         raise e
 
+
 def _hurl_summarize_results(results, params, csv_filename):
 
     #summarized_results = dict()
@@ -1202,7 +1221,7 @@ def _hurl_summarize_results(results, params, csv_filename):
     summarized_results['complete_bees'] = [r for r in results if r is not None and type(r) != socket.error]
     summarized_results['timeout_bees_params'] = [p for r, p in zip(results, params) if r is None]
     summarized_results['exception_bees_params'] = [p for r, p in zip(results, params) if type(r) == socket.error]
-    summarized_results['complete_bees_params'] = [p for r, p in zip(results, params) if r is not None and type(r) != socket.error]
+    summarized_results['complete_bees_params'] = [p for r, p in zip(results, params) if r and type(r) != socket.error]
     summarized_results['num_timeout_bees'] = len(summarized_results['timeout_bees'])
     summarized_results['num_exception_bees'] = len(summarized_results['exception_bees'])
     summarized_results['num_complete_bees'] = len(summarized_results['complete_bees'])
@@ -1210,7 +1229,7 @@ def _hurl_summarize_results(results, params, csv_filename):
     complete_results = [r['fetches'] for r in summarized_results['complete_bees']]
     summarized_results['total_complete_requests'] = sum(complete_results)
 
-    #make summarized_results based of the possible response codes hurl gets
+    # make summarized_results based of the possible response codes hurl gets
     reported_response_codes = [r['response-codes'] for r in [x for x in summarized_results['complete_bees']]]
     for i in reported_response_codes:
         if isinstance(i, dict):
@@ -1249,7 +1268,8 @@ def _hurl_summarize_results(results, params, csv_filename):
     summarized_results['connect-ms-min'] = min(complete_results)
 
     complete_results = [r['bytes-per-sec'] for r in summarized_results['complete_bees']]
-    summarized_results['bytes-per-second-mean'] = old_div(sum(complete_results), summarized_results['num_complete_bees'])
+    summarized_results['bytes-per-second-mean'] = old_div(sum(complete_results),
+                                                          summarized_results['num_complete_bees'])
 
     complete_results = [r['end2end-ms-min'] for r in summarized_results['complete_bees']]
     summarized_results['end2end-ms-min'] = old_div(sum(complete_results), summarized_results['num_complete_bees'])
@@ -1282,14 +1302,17 @@ def _hurl_summarize_results(results, params, csv_filename):
             summarized_results['performance_accepted'] = False
 
     if summarized_results['rps_bounds'] is not None:
-        if summarized_results['mean_requests'] > summarized_results['rps_bounds'] and summarized_results['performance_accepted'] is True or None:
+        if summarized_results['mean_requests'] > summarized_results['rps_bounds'] and \
+                summarized_results['performance_accepted'] is True or None:
             summarized_results['performance_accepted'] = True
         else:
             summarized_results['performance_accepted'] = False
 
-    summarized_results['request_time_cdf'] = _get_request_time_cdf(summarized_results['total_complete_requests'], summarized_results['complete_bees'])
+    summarized_results['request_time_cdf'] = _get_request_time_cdf(summarized_results['total_complete_requests'],
+                                                                   summarized_results['complete_bees'])
     if csv_filename:
-        _create_request_time_cdf_csv(results, summarized_results['complete_bees_params'], summarized_results['request_time_cdf'], csv_filename)
+        _create_request_time_cdf_csv(results, summarized_results['complete_bees_params'],
+                                     summarized_results['request_time_cdf'], csv_filename)
 
     return summarized_results
 
@@ -1299,8 +1322,10 @@ def _hurl_print_results(summarized_results):
     Print summarized load-testing results.
     """
     if summarized_results['exception_bees']:
-        print('     %i of your bees didn\'t make it to the action. They might be taking a little longer than normal to'
-              ' find their machine guns, or may have been terminated without using "bees down".' % summarized_results['num_exception_bees'])
+        print(
+            '     {:d} of your bees didn\'t make it to the action. They might be taking a little longer than normal to'
+            ' find their machine guns, or may have been terminated without using "bees down".'.format(
+                summarized_results['num_exception_bees']))
 
     if summarized_results['timeout_bees']:
         print('     Target timed out without fully responding to %i bees.' % summarized_results['num_timeout_bees'])
@@ -1332,7 +1357,6 @@ def _hurl_print_results(summarized_results):
     if 'rps_bounds' in summarized_results and summarized_results['rps_bounds'] is not None:
         print('     Requests per second:\t%f [#/sec] (upper bounds)' % summarized_results['rps_bounds'])
 
-
     if 'tpr_bounds' in summarized_results and summarized_results['tpr_bounds'] is not None:
         print('     Time per request:\t\t%f [ms] (lower bounds)' % summarized_results['tpr_bounds'])
 
@@ -1350,14 +1374,23 @@ def _hurl_print_results(summarized_results):
     else:
         print('Mission Assessment: Swarm annihilated target.')
 
+
 def _get_new_state_file_name(zone):
-    ''' take zone and return multi regional bee file,
-    from ~/.bees to ~/.bees.${region}'''
+    """
+    Take zone and return multi regional bee file,
+    from ~/.bees to ~/.bees.${region}
+    :param zone:
+    :return:
+    """
     return STATE_FILENAME+'.'+zone
 
+
 def _get_existing_regions():
-    '''return a list of zone name strings from looking at
-    existing region ~/.bees.* files'''
+    """
+    return a list of zone name strings from looking at
+    existing region ~/.bees.* files
+    :return:
+    """
     existing_regions = []
     possible_files = os.listdir(os.path.expanduser('~'))
     for f in possible_files:
