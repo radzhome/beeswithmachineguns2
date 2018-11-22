@@ -1,19 +1,22 @@
 h4. Bees with Machine Guns!
 
+# TODO: default ami
+# TODO: install ab
+
 A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).
 
 Also, retribution for "this shameful act":http://kottke.org/10/10/tiny-catapult-for-throwing-pies-at-bees against a proud hive.
 
 h2. Dependencies
 
-* Python 2.6 - 3.6
+* Python 2.6 - 3.7
 * boto
 * paramiko
 
 h2. Installation for users
 
 <pre>
-pip install https://github.com/newsapps/beeswithmachineguns/archive/master.zip
+pip install https://github.com/radzhome/beeswithmachineguns/archive/master.zip
 </pre>
 
 h2. Installation for developers (w/ virtualenv + virtualenvwrapper)
@@ -46,6 +49,10 @@ Make sure the .boto file is only accessible by the current account:
 chmod 600 .boto
 </pre>
 
+h2. Security Group
+
+Create a security group that has public access on port 22 and use this when you run bees i.e. public or bees-test-sg
+
 h2. Usage
 
 A typical bees session looks something like this:
@@ -55,6 +62,11 @@ bees up -s 4 -g public -k frakkingtoasters
 bees attack -n 10000 -c 250 -u http://www.ournewwebbyhotness.com/
 bees down
 </pre>
+
+Another example
+<pre>
+./bees up -s 1 -k mykey -z ca-central-1a -l ec2-user -i ami-0f552e0a86f08b660 -g group-22-open --subnet my-subnet
+</code>
 
 A bees session where this is being called from a python file, while specifying content type and a payload file.
 This is a working example, all of these objects exist in the us-east-1 region.
@@ -200,12 +212,12 @@ Options:
                         ami-ff17fb96).
     -t TYPE, --type=TYPE
                         The instance-type to use for each server (default:
-                        t1.micro).
+                        t3.micro).
     -l LOGIN, --login=LOGIN
                         The ssh username name to use to connect to the new
                         servers (default: newsapps).
     -v SUBNET, --subnet=SUBNET
-                        The vpc subnet id in which the instances should be
+                        The vpc subnet id (or name) in which the instances should be
                         launched. (default: None).
     -b BID, --bid=BID   The maximum bid price per spot instance (default:
                         None).

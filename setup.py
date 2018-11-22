@@ -9,11 +9,12 @@ with open('requirements.txt') as f:
     required_packages = f.readlines()
 
 setup(name='beeswithmachineguns',
-      version='0.1.4',
-      description='A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).',
-      author='Christopher Groskopf',
+      version='1.2.0',
+      description='A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) '
+                  'targets (web applications).',
+      author='Christopher Groskopf, Radzhome',
       author_email='cgroskopf@tribune.com',
-      url='http://github.com/newsapps/beeswithmachineguns',
+      url='http://github.com/radzhome/beeswithmachineguns',
       license='MIT',
       packages=['beeswithmachineguns'],
       scripts=['bees'],

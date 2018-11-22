@@ -37,7 +37,6 @@ from multiprocessing import Pool
 import os
 import re
 import socket
-import time
 import sys
 import ast
 IS_PY2 = sys.version_info.major == 2
@@ -73,8 +72,8 @@ def _redirect_stdout(outfile=None):
     yield
     sys.stdout = save_stdout
 
+
 def _read_server_list(*mr_zone):
-    instance_ids = []
     if len(mr_zone) > 0:
         MR_STATE_FILENAME = _get_new_state_file_name(mr_zone[-1])
     else:
@@ -93,12 +92,14 @@ def _read_server_list(*mr_zone):
 
     return (username, key_name, zone, instance_ids)
 
+
 def _write_server_list(username, key_name, zone, instances):
     with open(_get_new_state_file_name(zone), 'w') as f:
         f.write('%s\n' % username)
         f.write('%s\n' % key_name)
         f.write('%s\n' % zone)
         f.write('\n'.join([instance.id for instance in instances]))
+
 
 def _delete_server_list(zone):
     os.remove(_get_new_state_file_name(zone))
@@ -107,14 +108,17 @@ def _delete_server_list(zone):
 def _get_pem_path(key):
     return os.path.expanduser('~/.ssh/%s.pem' % key)
 
+
 def _get_region(zone):
     return zone if 'gov' in zone else zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
+
 
 def _get_security_group_id(connection, security_group_name, subnet):
     """Takes a security group name and returns the ID.  If the name cannot be found, the name will be attempted
     as an ID.  The first group found by this name or ID will be used."""
     if not security_group_name:
-        print('The bees need a security group to run under. Need to open a port from where you are to the target subnet.')
+        print('The bees need a security group to run under. Need to open a port from where you are to the target '
+              'subnet.')
         return
 
     security_groups = connection.get_all_security_groups(filters={'group-name': [security_group_name]})
@@ -127,20 +131,33 @@ def _get_security_group_id(connection, security_group_name, subnet):
 
     return security_groups[0].id if security_groups else None
 
+
 # Methods
 
 def up(count, group, zone, image_id, instance_type, username, key_name, subnet, tags, bid = None):
     """
     Startup the load testing server.
+    :param count: int, count
+    :param group: str, security group
+    :param zone: str, az
+    :param image_id: str, ami id
+    :param instance_type: 
+    :param username: 
+    :param key_name: 
+    :param subnet: str, subnet id
+    :param tags: 
+    :param bid: 
+    :return: 
     """
-
+    subnet = subnet or ''
     existing_username, existing_key_name, existing_zone, instance_ids = _read_server_list(zone)
 
     count = int(count)
     if existing_username == username and existing_key_name == key_name and existing_zone == zone:
         ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
         existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
-        existing_instances = [instance for reservation in existing_reservations for instance in reservation.instances if instance.state == 'running']
+        existing_instances = [instance for reservation in existing_reservations for instance in reservation.instances
+                              if instance.state == 'running']
         # User, key and zone match existing values and instance ids are found on state file
         if count <= len(existing_instances):
             # Count is less than the amount of existing instances. No need to create new ones.
@@ -162,26 +179,35 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     pem_path = _get_pem_path(key_name)
 
     if not os.path.isfile(pem_path):
-        print('Warning. No key file found for %s. You will need to add this key to your SSH agent to connect.' % pem_path)
+        print(
+            "Warning. No key file found for {}. You will need to add this key to your SSH agent to connect."
+            "".format(pem_path))
 
     print('Connecting to the hive.')
 
     try:
         ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
     except boto.exception.NoAuthHandlerFound as e:
-        print("Authenciation config error, perhaps you do not have a ~/.boto file with correct permissions?")
-        print(e.message)
-        return e
+        print("Authentication config error, perhaps you do not have a ~/.boto file with correct permissions?")
+        # print(e.message)
+        raise e
+        # return e
     except Exception as e:
-        print("Unknown error occured:")
-        print(e.message)
-        return e
+        print("Unknown error occurred:")
+        # print(e.message)
+        raise e
+        # return e
 
-    if ec2_connection == None:
+    if not ec2_connection:
         raise Exception("Invalid zone specified? Unable to connect to region using zone name")
 
-    groupId = group if subnet is None else _get_security_group_id(ec2_connection, group, subnet)
-    print("GroupId found: %s" % groupId)
+    # TODO: Could check if after sg- is all numeric as well
+    security_group_id = group if \
+        group.lower().startswith('sg-') else _get_security_group_id(ec2_connection, group, subnet)
+    if security_group_id:
+        print("SubnetGroupId found: %s" % security_group_id)
+    else:
+        raise Exception("Unable to find security group {}. Try specifying the subnet id.".format(group))
 
     placement = None if 'gov' in zone else zone
     print("Placement: %s" % placement)
@@ -194,7 +220,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
             price=bid,
             count=count,
             key_name=key_name,
-            security_group_ids=[groupId],
+            security_group_ids=[security_group_id, ],
             instance_type=instance_type,
             placement=placement,
             subnet_id=subnet)
@@ -212,7 +238,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
                 min_count=count,
                 max_count=count,
                 key_name=key_name,
-                security_group_ids=[groupId],
+                security_group_ids=[security_group_id, ],
                 instance_type=instance_type,
                 placement=placement,
                 subnet_id=subnet)
@@ -220,19 +246,23 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         except boto.exception.EC2ResponseError as e:
             print(("Unable to call bees:", e.message))
             print("Is your sec group available in this region?")
-            print(subnet)
-            print(groupId)
-            return e
+            print("Subnet", subnet)
+            print("SubnetGroupID", security_group_id)
+            raise e
+            # return e
 
         instances = reservation.instances
-    if tags:
-        try:
-            tags_dict = ast.literal_eval(tags)
-            ids = [instance.id for instance in instances]
-            ec2_connection.create_tags(ids, tags_dict)
-        except Exception as e:
-            print("Unable to create tags:")
-            print("example: bees up -x \"{'any_key': 'any_value'}\"")
+
+    if not tags:
+        tags = '{"Type": "bee-instance"}'
+
+    try:
+        tags_dict = ast.literal_eval(tags)
+        ids = [instance.id for instance in instances]
+        ec2_connection.create_tags(ids, tags_dict)
+    except Exception as e:
+        print("Unable to create tags:")
+        print("example: bees up -x \"{'any_key': 'any_value'}\"")
 
     if instance_ids:
         existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
@@ -241,7 +271,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         dead_instances = [i for i in instance_ids if i not in [j.id for j in existing_instances]]
         list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
 
-    print('Waiting for bees to load their machine guns...')
+    print("Waiting for bees to load their machine guns...")
 
     instance_ids = instance_ids or []
 
@@ -254,20 +284,24 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
         instance_ids.append(instance.id)
 
-        print('Bee %s is ready for the attack.' % instance.id)
+        # TODO: Way to check ec2 instance is initialized?
+        print("Bee {}, private ip {} is ready for the attack. Make sure they all finished initializing first"
+              "".format(instance.id, instance.private_ip_address))
 
-    ec2_connection.create_tags(instance_ids, { "Name": "a bee!" })
+    ec2_connection.create_tags(instance_ids, {"Name": "a bee!"})
 
     _write_server_list(username, key_name, zone, instances)
 
-    print('The swarm has assembled %i bees.' % len(instances))
+    print("The swarm has assembled %i bees." % len(instances))
+
 
 def report():
     """
     Report the status of the load testing servers.
     """
     def _check_instances():
-        '''helper function to check multiple region files ~/.bees.*'''
+        """helper function to check multiple region files ~/.bees.*
+        """
         if not instance_ids:
             print('No bees have been mobilized.')
             return
@@ -411,6 +445,8 @@ def _attack(params):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         pem_path = params.get('key_name') and _get_pem_path(params['key_name']) or None
+        print("Pem key is {}".format(pem_path))
+
         if not os.path.isfile(pem_path):
             client.load_system_host_keys()
             client.connect(params['instance_name'], username=params['username'])
@@ -465,8 +501,22 @@ def _attack(params):
         # resolves issue #194, too much data sent over SSH control channel to BWMG
         # any future statistics parsing that requires more output from ab
         # may need this line altered to include other patterns
-        params['output_filter_patterns'] = '\n'.join(['Time per request:', 'Requests per second: ', 'Failed requests: ', 'Connect: ', 'Receive: ', 'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
-        benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" 2>/dev/null | grep -F "%(output_filter_patterns)s"' % params
+        params['output_filter_patterns'] = '\n'.join(
+            ['Time per request:', 'Requests per second: ', 'Failed requests: ', 'Connect: ', 'Receive: ',
+             'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
+
+        # TODO: CHECK AB IS INSTALLED, IF NOT INSTALL it
+        # mkdir /usr/local/src/ab && cd $_
+        # yumdownloader httpd-tools
+        # rpm2cpio httpd-tools-*.amzn1.i686.rpm | cpio -idmv ./usr/bin/ab
+        # mv usr/bin/ab /usr/bin/
+        # rm -rf /usr/local/src/ab
+        # yum install apr-util
+        #
+        # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
+        # default image set to ? ami-0f552e0a86f08b660
+        benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
+                            '2>/dev/null | grep -F "%(output_filter_patterns)s"' % params
         print(benchmark_command)
         stdin, stdout, stderr = client.exec_command(benchmark_command)
 
@@ -529,6 +579,7 @@ def _attack(params):
 
 
 def _summarize_results(results, params, csv_filename):
+    # import pdb; pdb.set_trace()
     summarized_results = dict()
     summarized_results['timeout_bees'] = [r for r in results if r is None]
     summarized_results['exception_bees'] = [r for r in results if type(r) == socket.error]
@@ -539,6 +590,10 @@ def _summarize_results(results, params, csv_filename):
     summarized_results['num_timeout_bees'] = len(summarized_results['timeout_bees'])
     summarized_results['num_exception_bees'] = len(summarized_results['exception_bees'])
     summarized_results['num_complete_bees'] = len(summarized_results['complete_bees'])
+
+    # Unable to connect to server?
+    if summarized_results['complete_bees'] and 'Err' in str(summarized_results['complete_bees'][0]):
+        raise Exception("Error getting results, {}".format(summarized_results['complete_bees'][0]))
 
     complete_results = [r['complete_requests'] for r in summarized_results['complete_bees']]
     summarized_results['total_complete_requests'] = sum(complete_results)
@@ -763,7 +818,8 @@ def attack(url, n, c, **options):
         params.append({
             'i': i,
             'instance_id': instance.id,
-            'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
+            'instance_name': instance.private_ip_address if instance.public_dns_name == "" else instance.public_dns_name,
+            # 'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
             'url': urls[i % url_count],
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -815,6 +871,7 @@ def attack(url, n, c, **options):
 #############################
 ### hurl version methods, ###
 #############################
+
 
 def hurl_attack(url, n, c, **options):
     """
@@ -876,7 +933,8 @@ def hurl_attack(url, n, c, **options):
         params.append({
             'i': i,
             'instance_id': instance.id,
-            'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
+            # 'instance_name': instance.private_dns_name if instance.public_dns_name == "" else instance.public_dns_name,
+            'instance_name': instance.private_ip_address if instance.public_dns_name == "" else instance.public_dns_name,
             'url': url,
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -1093,15 +1151,14 @@ def _hurl_attack(params):
                 print("Please check the url entered, also possible no requests were successful Line: 1018")
                 return None
 
-
-        #create the response dict to return to hurl_attack()
+        # create the response dict to return to hurl_attack()
         stdin, stdout, stderr = client.exec_command('cat %(csv_filename)s' % params)
         try:
             hurl_json = dict(json.loads(stdout.read().decode('utf-8')))
             for k ,v in list(hurl_json.items()):
                 response[k] = v
 
-            #check if user wants output for seperate instances and Sdisplay if so
+            # check if user wants output for seperate instances and Sdisplay if so
             long_out_container=[]
             if params['long_output']:
                 print(hurl_command)

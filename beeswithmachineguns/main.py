@@ -33,10 +33,11 @@ try:
     from urllib.parse import urlparse
 except ImportError:
     from urllib.parse import urlparse
-from optparse import OptionParser, OptionGroup, Values
+from optparse import OptionParser, OptionGroup
 import threading
 import time
 import sys
+
 
 def parse_options():
     """
@@ -58,7 +59,10 @@ commands:
     """)
 
     up_group = OptionGroup(parser, "up",
-                           """In order to spin up new servers you will need to specify at least the -k command, which is the name of the EC2 keypair to use for creating and connecting to the new servers. The bees will expect to find a .pem file with this name in ~/.ssh/. Alternatively, bees can use SSH Agent for the key.""")
+                           """In order to spin up new servers you will need to specify at least the -k command, 
+                           which is the name of the EC2 keypair to use for creating and connecting to the new servers. 
+                           The bees will expect to find a .pem file with this name in ~/.ssh/. Alternatively, bees 
+                           can use SSH Agent for the key.""")
 
     # Required
     up_group.add_option('-k', '--key',  metavar="KEY",  nargs=1,
@@ -78,12 +82,12 @@ commands:
                         action='store', dest='instance', type='string', default='ami-ff17fb96',
                         help="The instance-id to use for each server from (default: ami-ff17fb96).")
     up_group.add_option('-t', '--type',  metavar="TYPE",  nargs=1,
-                        action='store', dest='type', type='string', default='t1.micro',
-                        help="The instance-type to use for each server (default: t1.micro).")
+                        action='store', dest='type', type='string', default='t3.micro',
+                        help="The instance-type to use for each server (default: t3.micro).")
     up_group.add_option('-l', '--login',  metavar="LOGIN",  nargs=1,
                         action='store', dest='login', type='string', default='newsapps',
                         help="The ssh username name to use to connect to the new servers (default: newsapps).")
-    up_group.add_option('-v', '--subnet',  metavar="SUBNET",  nargs=1,
+    up_group.add_option('-v', '--subnet', metavar="SUBNET",  nargs=1,
                         action='store', dest='subnet', type='string', default=None,
                         help="The vpc subnet id in which the instances should be launched. (default: None).")
     up_group.add_option('-b', '--bid', metavar="BID", nargs=1,
@@ -96,7 +100,8 @@ commands:
     parser.add_option_group(up_group)
 
     attack_group = OptionGroup(parser, "attack",
-                               """Beginning an attack requires only that you specify the -u option with the URL you wish to target.""")
+                               """Beginning an attack requires only that you specify the -u option with the URL you 
+                               wish to target.""")
 
     # Required
     attack_group.add_option('-u', '--url', metavar="URL", nargs=1,
@@ -116,16 +121,19 @@ commands:
                             help="The number of total connections to make to the target (default: 1000).")
     attack_group.add_option('-C', '--cookies', metavar="COOKIES", nargs=1, action='store', dest='cookies',
                             type='string', default='',
-                            help='Cookies to send during http requests. The cookies should be passed using standard cookie formatting, separated by semi-colons and assigned with equals signs.')
+                            help='Cookies to send during http requests. The cookies should be passed using standard '
+                                 'cookie formatting, separated by semi-colons and assigned with equals signs.')
     attack_group.add_option('-c', '--concurrent', metavar="CONCURRENT", nargs=1,
                             action='store', dest='concurrent', type='int', default=100,
                             help="The number of concurrent connections to make to the target (default: 100).")
     attack_group.add_option('-H', '--headers', metavar="HEADERS", nargs=1,
                             action='store', dest='headers', type='string', default='',
-                            help="HTTP headers to send to the target to attack. Multiple headers should be separated by semi-colons, e.g header1:value1;header2:value2")
+                            help="HTTP headers to send to the target to attack. Multiple headers should be separated "
+                                 "by semi-colons, e.g header1:value1;header2:value2")
     attack_group.add_option('-Z', '--ciphers', metavar="CIPHERS", nargs=1,
                             action='store', dest='ciphers', type='string', default='',
-                            help="Openssl SSL/TLS cipher name(s) to use for negotiation.  Passed directly to ab's -Z option.  ab-only.")
+                            help="Openssl SSL/TLS cipher name(s) to use for negotiation.  Passed directly to ab's -Z "
+                                 "option.  ab-only.")
     attack_group.add_option('-e', '--csv', metavar="FILENAME", nargs=1,
                             action='store', dest='csv_filename', type='string', default='',
                             help="Store the distribution of results in a csv file for all completed bees (default: '').")
@@ -134,7 +142,8 @@ commands:
                             help="ContentType header to send to the target of the attack.")
     attack_group.add_option('-I', '--sting', metavar="sting", nargs=1,
                             action='store', dest='sting', type='int', default=1,
-                            help="The flag to sting (ping to cache) url before attack (default: 1). 0: no sting, 1: sting sequentially, 2: sting in parallel")
+                            help="The flag to sting (ping to cache) url before attack (default: 1). 0: no sting, 1: "
+                                 "sting sequentially, 2: sting in parallel")
     attack_group.add_option('-S', '--seconds', metavar="SECONDS", nargs=1,
                             action='store', dest='seconds', type='int', default=60,
                             help= "hurl only: The number of total seconds to attack the target (default: 60).")
@@ -161,10 +170,13 @@ commands:
                             help= "hurl only: Socket receive buffer size.")
     # Optional
     attack_group.add_option('-T', '--tpr', metavar='TPR', nargs=1, action='store', dest='tpr', default=None, type='float',
-                            help='The upper bounds for time per request. If this option is passed and the target is below the value a 1 will be returned with the report details (default: None).')
+                            help='The upper bounds for time per request. If this option is passed and the target is '
+                                 'below the value a 1 will be returned with the report details (default: None).')
     attack_group.add_option('-R', '--rps', metavar='RPS', nargs=1, action='store', dest='rps', default=None, type='float',
-                            help='The lower bounds for request per second. If this option is passed and the target is above the value a 1 will be returned with the report details (default: None).')
-    attack_group.add_option('-A', '--basic_auth', metavar='basic_auth', nargs=1, action='store', dest='basic_auth', default='', type='string',
+                            help='The lower bounds for request per second. If this option is passed and the target '
+                                 'is above the value a 1 will be returned with the report details (default: None).')
+    attack_group.add_option('-A', '--basic_auth', metavar='basic_auth', nargs=1, action='store', dest='basic_auth',
+                            default='', type='string',
                             help='BASIC authentication credentials, format auth-username:password (default: None).')
     attack_group.add_option('-j', '--hurl', metavar="HURL_COMMANDS",
                             action='store_true', dest='hurl',
@@ -175,7 +187,6 @@ commands:
     attack_group.add_option('-L', '--responses_per', metavar="RESPONSE_PER",
                             action='store_true', dest='responses_per',
                             help="hurl only: Display http(s) response codes per interval instead of request statistics")
-
 
     parser.add_option_group(attack_group)
 
@@ -193,7 +204,10 @@ commands:
             parser.error('To spin up new instances you need to specify a key-pair name with -k')
 
         if options.group == 'default':
-            print('New bees will use the "default" EC2 security group. Please note that port 22 (SSH) is not normally open on this group. You will need to use to the EC2 tools to open it before you will be able to attack.')
+            print('New bees will use the "default" EC2 security group. Please note that port 22 (SSH) is not normally '
+                  'open on this group. You will need to use to the EC2 tools to open it before you will be able to '
+                  'attack.')
+
         zone_len = options.zone.split(',')
         if len(zone_len) > 1:
             if len(options.instance.split(',')) != len(zone_len):
@@ -205,15 +219,17 @@ commands:
                 # for each ami and zone set zone and instance
                 for tup_val in zip(ami_list, zone_list):
                     options.instance, options.zone = tup_val
+                    # running up()
                     threading.Thread(target=bees.up, args=(options.servers, options.group,
-                                                            options.zone, options.instance,
-                                                            options.type,options.login,
-                                                            options.key, options.subnet,
-                                                            options.tags, options.bid)).start()
-                    #time allowed between threads
+                                                           options.zone, options.instance,
+                                                           options.type, options.login,
+                                                           options.key, options.subnet,
+                                                           options.tags, options.bid)).start()
+                    # time allowed between threads
                     time.sleep(delay)
         else:
-            bees.up(options.servers, options.group, options.zone, options.instance, options.type, options.login, options.key, options.subnet, options.tags, options.bid)
+            bees.up(options.servers, options.group, options.zone, options.instance, options.type, options.login,
+                    options.key, options.subnet, options.tags, options.bid)
 
     elif command == 'attack':
         if not options.url:
@@ -257,21 +273,22 @@ commands:
             for region in regions_list:
                 additional_options['zone'] = region
                 threading.Thread(target=bees.hurl_attack, args=(options.url, options.number, options.concurrent),
-                    kwargs=additional_options).start()
-                #time allowed between threads
+                                 kwargs=additional_options).start()
+                # time allowed between threads
                 time.sleep(delay)
         else:
             for region in regions_list:
                 additional_options['zone'] = region
                 threading.Thread(target=bees.attack, args=(options.url, options.number,
-                    options.concurrent), kwargs=additional_options).start()
-                #time allowed between threads
+                                                           options.concurrent), kwargs=additional_options).start()
+                # time allowed between threads
                 time.sleep(delay)
 
     elif command == 'down':
         bees.down()
     elif command == 'report':
         bees.report()
+
 
 def main():
     parse_options()
