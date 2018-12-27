@@ -35,6 +35,7 @@ import traceback
 
 import boto.ec2
 import boto.exception
+import boto3  # Converting to boto3 slowly.. starting with broken stuff
 import paramiko
 import json
 from collections import defaultdict
@@ -79,7 +80,8 @@ def _write_server_list(username, key_name, zone, instances):
         f.write('%s\n' % username)
         f.write('%s\n' % key_name)
         f.write('%s\n' % zone)
-        f.write('\n'.join([instance.id for instance in instances]))
+
+        f.write('\n'.join([instance['InstanceId'] for instance in instances]))
 
 
 def _delete_server_list(zone):
@@ -94,7 +96,7 @@ def _get_region(zone):
     return zone if 'gov' in zone else zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
 
 
-def _get_security_group_id(connection, security_group_name, subnet):
+def _get_security_group_id(connection, security_group_name):
     """
     Takes a security group name and
     returns the ID. If the name cannot be
@@ -103,27 +105,33 @@ def _get_security_group_id(connection, security_group_name, subnet):
     this name or ID will be used.)
     :param connection:
     :param security_group_name:
-    :param subnet:
     :return:
     """
     if not security_group_name:
         print('The bees need a security group to run under. Need to open a port from where you are to the target '
               'subnet.')
         return
-
-    security_groups = connection.get_all_security_groups(filters={'group-name': [security_group_name]})
+    security_groups = connection.describe_security_groups(
+        Filters=[{'Name': 'group-name', 'Values': [security_group_name, ]}, ]
+    )
+    security_groups = security_groups['SecurityGroups']
 
     if not security_groups:
-        security_groups = connection.get_all_security_groups(filters={'group-id': [security_group_name]})
+        security_groups = connection.describe_security_groups(
+            Filters=[{'Name': 'group-id', 'Values': [security_group_name, ]}, ]
+        )
+        security_groups = security_groups['SecurityGroups']
         if not security_groups:
-            print('The bees need a security group to run under. The one specified was not found.')
+            print('The bees need a security group to run under. The one specified was not found. '
+                  'Create a sg that has access to port 22 ie. from 0.0.0.0/0')
             return
 
-    return security_groups[0].id if security_groups else None
+    return security_groups[0]['GroupId'] if security_groups else None
 
 
 # Methods
 
+# TODO: up brings up new bees every time now, does not account for running ones, file ok?
 def up(count, group, zone, image_id, instance_type, username, key_name, subnet, tags, bid = None):
     """
     Startup the load testing server.
@@ -143,11 +151,14 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     existing_username, existing_key_name, existing_zone, instance_ids = _read_server_list(zone)
 
     count = int(count)
+
+    boto3_session = boto3.Session()
+    boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
+
     if existing_username == username and existing_key_name == key_name and existing_zone == zone:
-        ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
-        existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
-        existing_instances = [instance for reservation in existing_reservations for instance in reservation.instances
-                              if instance.state == 'running']
+        existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+        existing_instances = [instance for reservation in existing_reservations for instance in reservation['Instances']
+                              if instance['State'] == 'running']
         # User, key and zone match existing values and instance ids are found on state file
         if count <= len(existing_instances):
             # Count is less than the amount of existing instances. No need to create new ones.
@@ -193,7 +204,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     # TODO: Could check if after sg- is all numeric as well
     security_group_id = group if \
-        group.lower().startswith('sg-') else _get_security_group_id(ec2_connection, group, subnet)
+        group.lower().startswith('sg-') else _get_security_group_id(boto3_ec2_client, group)
     if security_group_id:
         print("SubnetGroupId found: %s" % security_group_id)
     else:
@@ -203,6 +214,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     print("Placement: %s" % placement)
 
     if bid:
+        # TODO: Not tested
         print('Attempting to call up %i spot bees, this can take a while...' % count)
 
         spot_requests = ec2_connection.request_spot_instances(
@@ -223,15 +235,17 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         print('Attempting to call up %i bees.' % count)
 
         try:
-            reservation = ec2_connection.run_instances(
-                image_id=image_id,
-                min_count=count,
-                max_count=count,
-                key_name=key_name,
-                security_group_ids=[security_group_id, ],
-                instance_type=instance_type,
-                placement=placement,
-                subnet_id=subnet)
+            reservation = boto3_ec2_client.run_instances(
+                ImageId=image_id,
+                MinCount=count,
+                MaxCount=count,
+                KeyName=key_name,
+                SecurityGroupIds=[security_group_id, ],
+                InstanceType=instance_type,
+                Placement={'AvailabilityZone': placement},
+                SubnetId=subnet)
+
+            time.sleep(3)  # Wait a bit for bees to come up
 
         except boto.exception.EC2ResponseError as e:
             print(("Unable to call bees:", e.message))
@@ -241,23 +255,23 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
             raise e
             # return e
 
-        instances = reservation.instances
+        instances = reservation['Instances']
 
     if not tags:
         tags = '{"Type": "bee-instance"}'
 
     try:
         tags_dict = ast.literal_eval(tags)
-        ids = [instance.id for instance in instances]
+        ids = [instance['InstanceId'] for instance in instances]
         ec2_connection.create_tags(ids, tags_dict)
     except Exception as e:
         print("Unable to create tags:")
         print("example: bees up -x \"{'any_key': 'any_value'}\"")
 
     if instance_ids:
-        existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
-        existing_instances = [instance for reservation in existing_reservations for
-                              instance in reservation.instances if instance.state == 'running']
+        existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+        existing_instances = [instance for reservation in existing_reservations for instance in reservation['Instances']
+                              if instance['State'] == 'running']
         list(map(instances.append, existing_instances))
         dead_instances = [i for i in instance_ids if i not in [j.id for j in existing_instances]]
         list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
@@ -266,20 +280,43 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     instance_ids = instance_ids or []
 
-    for instance in [i for i in instances if i.state == 'pending']:
-        instance.update()
-        while instance.state != 'running':
+    # Can be 'pending'|'running'|'shutting-down'|'terminated'|'stopping'|'stopped'
+    for instance in [i for i in instances if i['State']['Name'] == 'pending']:
+        instance_id = instance['InstanceId']
+        private_ip = instance['PrivateIpAddress']
+
+        instance = boto3_ec2_client.describe_instance_status(InstanceIds=[instance_id, ])['InstanceStatuses']
+
+        if len(instance):
+            instance = instance[0]
+
+            instance['State'] = instance['InstanceState']
+
+        while not instance or instance['State']['Name'] != 'running':
             print('.')
+            # print(instance['State']['Name'])
             time.sleep(5)
-            instance.update()
+            instance = boto3_ec2_client.describe_instance_status(InstanceIds=[instance_id, ])['InstanceStatuses']
+            if len(instance):
+                instance = instance[0]
+                instance['State'] = instance['InstanceState']
 
-        instance_ids.append(instance.id)
+        instance['PrivateIpAddress'] = private_ip
+        instance_ids.append(instance['InstanceId'])
 
-        # TODO: Way to check ec2 instance is initialized?
         print("Bee {}, private ip {} is ready for the attack. Make sure they all finished initializing first"
-              "".format(instance.id, instance.private_ip_address))
+              "".format(instance['InstanceId'], instance['PrivateIpAddress']))
 
-    ec2_connection.create_tags(instance_ids, {"Name": "a bee!"})
+    boto3_ec2_client.create_tags(
+        Resources=instance_ids, Tags=[
+        {
+            'Key': 'Name',
+            'Value': 'a bee!',
+        },        {
+            'Key': 'Application',
+            'Value': 'the_swarm',
+        }, ]
+                                 )
 
     _write_server_list(username, key_name, zone, instances)
 
@@ -332,11 +369,16 @@ def down(*mr_zone):
         print("Connecting to the hive.")
 
         ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+        boto3_session = boto3.Session()
+        boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
         print("Calling off the swarm for {}.".format(region))
 
-        terminated_instance_ids = ec2_connection.terminate_instances(
-            instance_ids=instance_ids)
+        try:
+            terminated_instance_ids = boto3_ec2_client.terminate_instances(InstanceIds=instance_ids)
+        except boto3_ec2_client.exceptions.ClientError as e:
+            if 'do not exist' in str(e):
+                terminated_instance_ids = []
 
         print('Stood down %i bees.' % len(terminated_instance_ids))
 
@@ -566,7 +608,6 @@ def _attack(params):
 
 
 def _summarize_results(results, params, csv_filename):
-    # import pdb; pdb.set_trace()
     summarized_results = dict()
     summarized_results['timeout_bees'] = [r for r in results if r is None]
     summarized_results['exception_bees'] = [r for r in results if type(r) == socket.error]
@@ -771,16 +812,18 @@ def attack(url, n, c, **options):
 
     print('Connecting to the hive.')
 
-    ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+    # ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+    boto3_session = boto3.Session()
+    boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
     print('Assembling bees.')
 
-    reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
+    reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
 
     instances = []
 
     for reservation in reservations:
-        instances.extend(reservation.instances)
+        instances.extend(reservation['Instances'])
 
     instance_count = len(instances)
 
@@ -813,8 +856,8 @@ def attack(url, n, c, **options):
     for i, instance in enumerate(instances):
         params.append({
             'i': i,
-            'instance_id': instance.id,
-            'instance_name': instance.private_ip_address if not instance.public_dns_name else instance.public_dns_name,
+            'instance_id': instance['InstanceId'],
+            'instance_name': instance['PrivateIpAddresses'] if not instance['PrivateDnsName'] else instance['PrivateDnsName'],
             'url': urls[i % url_count],
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -1127,6 +1170,7 @@ def _hurl_attack(params):
 
         params['options'] = options
 
+        # benchmark_command
         hurl_command = 'hurl %(url)s -p %(concurrent_requests)s %(options)s -j' % params
         stdin, stdout, stderr = client.exec_command(hurl_command)
 
