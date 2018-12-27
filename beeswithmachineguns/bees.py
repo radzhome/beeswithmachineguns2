@@ -70,7 +70,7 @@ def _read_server_list(*mr_zone):
         text = f.read()
         instance_ids = [i for i in text.split('\n') if i != '']
 
-        print('Read {} bees from the roster: {}'.format(len(instance_ids), zone))
+        print("Read {} bees from the roster: {}".format(len(instance_ids), zone))
 
     return username, key_name, zone, instance_ids
 
@@ -1425,7 +1425,7 @@ def _get_new_state_file_name(zone):
     :param zone:
     :return:
     """
-    return STATE_FILENAME+'.'+zone
+    return '{}.{}'.format(STATE_FILENAME, zone)
 
 
 def _get_existing_regions():
