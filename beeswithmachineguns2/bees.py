@@ -42,7 +42,7 @@ from collections import defaultdict
 import time
 
 
-STATE_FILENAME = os.path.expanduser('~/.bees2')
+STATE_FILENAME = os.path.expanduser('~/.bees2')  # Changing affects _get_existing_regions
 
 # Utilities
 
@@ -1486,6 +1486,6 @@ def _get_existing_regions():
     existing_regions = []
     possible_files = os.listdir(os.path.expanduser('~'))
     for f in possible_files:
-        something= re.search(r'\.bees\.(.*)', f)
-        existing_regions.append( something.group(1)) if something else "no"
+        something = re.search(r'\.bees2\.(.*)', f)
+        existing_regions.append(something.group(1)) if something else "no"
     return existing_regions

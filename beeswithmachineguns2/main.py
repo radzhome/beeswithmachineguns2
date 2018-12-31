@@ -240,6 +240,9 @@ commands:
         for region in bees._get_existing_regions():
                 regions_list.append(region)
 
+        if not regions_list:
+            print("WARNING: Unable to find any existing region bee files")
+
         # urlparse needs a scheme in the url. ab doesn't, so add one just for the sake of parsing.
         # urlparse('google.com').path == 'google.com' and urlparse('google.com').netloc == '' -> True
         parsed = urlparse(options.url) if '://' in options.url else urlparse('http://'+options.url)
