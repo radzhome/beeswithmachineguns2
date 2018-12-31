@@ -29,6 +29,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import zip
 from . import bees
+from . import VERSION
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -44,9 +45,9 @@ def parse_options():
     Handle the command line arguments for spinning up bees
     """
     parser = OptionParser(usage="""
-bees COMMAND [options]
+bees2 COMMAND [options]
 
-Bees with Machine Guns
+Bees with Machine Guns 2, Version {}
 
 A utility for arming (creating) many bees (small EC2 instances) to attack
 (load test) targets (web applications).
@@ -56,7 +57,7 @@ commands:
   attack  Begin the attack on a specific url.
   down    Shutdown and deactivate the load testing servers.
   report  Report the status of the load testing servers.
-    """)
+    """.format(VERSION))
 
     up_group = OptionGroup(parser, "up",
                            """In order to spin up new servers you will need to specify at least the -k command, 

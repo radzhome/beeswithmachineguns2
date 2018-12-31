@@ -42,7 +42,7 @@ from collections import defaultdict
 import time
 
 
-STATE_FILENAME = os.path.expanduser('~/.bees')
+STATE_FILENAME = os.path.expanduser('~/.bees2')
 
 # Utilities
 

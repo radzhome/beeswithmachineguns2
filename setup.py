@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import beeswithmachineguns2
 
 try:
     from setuptools import setup
@@ -9,7 +10,7 @@ with open('requirements.txt') as f:
     required_packages = f.readlines()
 
 setup(name='beeswithmachineguns2',
-      version='2.0.0',
+      version=beeswithmachineguns2.VERSION,
       description='A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) '
                   'targets (web applications).',
       author='Christopher Groskopf, radzhome',
@@ -17,7 +18,7 @@ setup(name='beeswithmachineguns2',
       url='http://github.com/radzhome/beeswithmachineguns2',
       license='MIT',
       packages=['beeswithmachineguns2'],
-      scripts=['bees'],
+      scripts=['bees2'],
       install_requires=required_packages,
       classifiers=[
           'Development Status :: 5 - Production/Stable',
