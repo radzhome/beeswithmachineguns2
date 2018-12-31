@@ -76,6 +76,14 @@ def _read_server_list(*mr_zone):
 
 
 def _write_server_list(username, key_name, zone, instances):
+    """
+    Write .bees file
+    :param username:
+    :param key_name:
+    :param zone:
+    :param instances: list, list of dicts (instances)
+    :return:
+    """
     with open(_get_new_state_file_name(zone), 'w') as f:
         f.write('%s\n' % username)
         f.write('%s\n' % key_name)
@@ -85,14 +93,29 @@ def _write_server_list(username, key_name, zone, instances):
 
 
 def _delete_server_list(zone):
+    """
+    Delete .bees file
+    :param zone:
+    :return:
+    """
     os.remove(_get_new_state_file_name(zone))
 
 
 def _get_pem_path(key):
+    """
+    Get ssh key path
+    :param key:
+    :return:
+    """
     return os.path.expanduser('~/.ssh/%s.pem' % key)
 
 
 def _get_region(zone):
+    """
+    Get region name from zone
+    :param zone: str, zone
+    :return:
+    """
     return zone if 'gov' in zone else zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
 
 
@@ -132,7 +155,7 @@ def _get_security_group_id(connection, security_group_name):
 # Methods
 
 # TODO: up brings up new bees every time now, does not account for running ones, file ok?
-def up(count, group, zone, image_id, instance_type, username, key_name, subnet, tags, bid = None):
+def up(count, group, zone, image_id, instance_type, username, key_name, subnet, tags, bid=None):
     """
     Startup the load testing server.
     :param count: int, count
@@ -186,8 +209,9 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     print('Connecting to the hive.')
 
+    region = _get_region(zone)
     try:
-        ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+        ec2_connection = boto.ec2.connect_to_region(region)
     except boto.exception.NoAuthHandlerFound as e:
         print("Authentication config error, perhaps you do not have a ~/.boto file with correct permissions?")
         # print(e.message)
@@ -198,9 +222,6 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         # print(e.message)
         raise e
         # return e
-
-    if not ec2_connection:
-        raise Exception("Invalid zone specified? Unable to connect to region using zone name")
 
     # TODO: Could check if after sg- is all numeric as well
     security_group_id = group if \
@@ -217,20 +238,27 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         # TODO: Not tested
         print('Attempting to call up %i spot bees, this can take a while...' % count)
 
-        spot_requests = ec2_connection.request_spot_instances(
-            image_id=image_id,
-            price=bid,
-            count=count,
-            key_name=key_name,
-            security_group_ids=[security_group_id, ],
-            instance_type=instance_type,
-            placement=placement,
-            subnet_id=subnet)
+        spot_requests = boto3_ec2_client.request_spot_instances(
+            SpotPrice=bid,
+            InstanceCount=count,
+            LaunchSpecification={
+                'ImageId': image_id,
+                'KeyName': key_name,
+                'SecurityGroupIds': [security_group_id, ],
+                'InstanceType': instance_type,
+                'Placement': {'AvailabilityZone': placement},
+                'SubnetId': subnet,
+            },
+        )
 
         # it can take a few seconds before the spot requests are fully processed
         time.sleep(5)
 
-        instances = _wait_for_spot_request_fulfillment(ec2_connection, spot_requests)  # TODO unexpected
+        if not ec2_connection:
+            raise Exception("Invalid zone specified? Unable to connect to region {} using zone name {}"
+                            "".format(region, zone))
+
+        ready_instances = _wait_for_spot_request_fulfillment(ec2_connection, spot_requests)  # TODO convert to boto3
     else:
         print('Attempting to call up %i bees.' % count)
 
@@ -255,25 +283,44 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
             raise e
             # return e
 
-        instances = reservation['Instances']
+        ready_instances = reservation['Instances']
 
     if not tags:
-        tags = '{"Type": "bee-instance"}'
+        # tags = '{"Type": "bee-instance"}'
+        tags = [
+            {
+                'Key': 'Name',
+                'Value': 'a bee!',
+            },        {
+                'Key': 'Application',
+                'Value': 'the_swarm',
+            },
+            {
+                'Key': 'Type',
+                'Value': 'bee-instance'
+            }
+        ]
+    else:
+        tags = ast.literal_eval(tags)
 
     try:
-        tags_dict = ast.literal_eval(tags)
-        ids = [instance['InstanceId'] for instance in instances]
-        ec2_connection.create_tags(ids, tags_dict)
+        # tags_list = [{'Key': tag_key, 'Value': tag_value} for tag_key, tag_value in tags_dict.items()]
+        # ids = [instance['InstanceId'] for instance in ready_instances]
+        # ec2_connection.create_tags(ids, tags_dict)
+        boto3_ec2_client.create_tags(Resources=[instance['InstanceId'] for instance in ready_instances], Tags=tags)
     except Exception as e:
         print("Unable to create tags:")
         print("example: bees up -x \"{'any_key': 'any_value'}\"")
+        print(e)
 
+    # instance_ids refers to existing ec2 instances, while ready_instances are the new ones just created in this run
     if instance_ids:
+        # Add existing instances to ready instances if running
         existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
         existing_instances = [instance for reservation in existing_reservations for instance in reservation['Instances']
-                              if instance['State'] == 'running']
-        list(map(instances.append, existing_instances))
-        dead_instances = [i for i in instance_ids if i not in [j.id for j in existing_instances]]
+                              if instance['State']['Name'] == 'running']
+        list(map(ready_instances.append, existing_instances))
+        dead_instances = [i for i in instance_ids if i not in [j['InstanceId'] for j in existing_instances]]
         list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
 
     print("Waiting for bees to load their machine guns...")
@@ -281,7 +328,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     instance_ids = instance_ids or []
 
     # Can be 'pending'|'running'|'shutting-down'|'terminated'|'stopping'|'stopped'
-    for instance in [i for i in instances if i['State']['Name'] == 'pending']:
+    for instance in [i for i in ready_instances if i['State']['Name'] == 'pending']:
         instance_id = instance['InstanceId']
         private_ip = instance['PrivateIpAddress']
 
@@ -307,20 +354,11 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         print("Bee {}, private ip {} is ready for the attack. Make sure they all finished initializing first"
               "".format(instance['InstanceId'], instance['PrivateIpAddress']))
 
-    boto3_ec2_client.create_tags(
-        Resources=instance_ids, Tags=[
-        {
-            'Key': 'Name',
-            'Value': 'a bee!',
-        },        {
-            'Key': 'Application',
-            'Value': 'the_swarm',
-        }, ]
-                                 )
+    boto3_ec2_client.create_tags(Resources=instance_ids, Tags=tags)
 
-    _write_server_list(username, key_name, zone, instances)
+    _write_server_list(username, key_name, zone, ready_instances)
 
-    print("The swarm has assembled %i bees." % len(instances))
+    print("The swarm has assembled %i bees." % len(ready_instances))
 
 
 def report():
@@ -368,7 +406,7 @@ def down(*mr_zone):
 
         print("Connecting to the hive.")
 
-        ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+        # ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
         boto3_session = boto3.Session()
         boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
@@ -376,11 +414,12 @@ def down(*mr_zone):
 
         try:
             terminated_instance_ids = boto3_ec2_client.terminate_instances(InstanceIds=instance_ids)
+            print(terminated_instance_ids)
         except boto3_ec2_client.exceptions.ClientError as e:
             if 'do not exist' in str(e):
                 terminated_instance_ids = []
 
-        print('Stood down %i bees.' % len(terminated_instance_ids))
+        print("Stood down {} bees.".format(len(instance_ids)))
 
         _delete_server_list(zone)
 
@@ -398,6 +437,8 @@ def _wait_for_spot_request_fulfillment(conn, requests, fulfilled_requests=None):
     Once all spot requests are fulfilled, return a
     list of corresponding spot instances.
     """
+    # TODO: Use describe_instances, describe_spot_fleet_instances(
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Client.describe_spot_fleet_instances
     fulfilled_requests = fulfilled_requests or []
     if len(requests) == 0:
         reservations = conn.get_all_instances(instance_ids = [r.instance_id for r in fulfilled_requests])
@@ -536,6 +577,7 @@ def _attack(params):
         # Make sure we have ab
         ab_install_command = 'sudo yum install httpd-tools -y'  # TODO Move to up, and poll until done, then ready, default ami user?
         client.exec_command(ab_install_command)
+        time.sleep(5)  # Wait for install
 
         # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
         # default image set to ? ami-0f552e0a86f08b660
@@ -890,7 +932,12 @@ def attack(url, n, c, **options):
     print('Organizing the swarm.')
     # Spin up processes for connecting to EC2 instances
     pool = Pool(len(params))
-    results = pool.map(_attack, params)
+
+    try:
+        results = pool.map(_attack, params)
+    except Exception as e:
+        print("Unable to connect to bees instances, are they all accessible?")
+        raise e
 
     summarized_results = _summarize_results(results, params, csv_filename)
     print('Offensive complete.')
@@ -1231,23 +1278,25 @@ def _hurl_attack(params):
             print("Please check the url entered, also possible no requests were successful Line: 1032")
             return None
         finally:
+            print("Bee {:d} is out of ammo.".format(params['i']))
+            client.close()
             return response
 
-        # TODO: Code is unreachable:
-        # print(hurl_json['response-codes'])
-        response['request_time_cdf'] = []
-        for row in csv.DictReader(stdout):
-            row["Time in ms"] = float(row["Time in ms"])
-            response['request_time_cdf'].append(row)
-        if not response['request_time_cdf']:
-            print('Bee %i lost sight of the target (connection timed out reading csv).' % params['i'])
-            return None
-
-        print("Bee {:d} is out of ammo.".format(params['i']))
-
-        client.close()
-
-        return response
+        # # TODO: Code is unreachable:
+        # # print(hurl_json['response-codes'])
+        # response['request_time_cdf'] = []
+        # for row in csv.DictReader(stdout):
+        #     row["Time in ms"] = float(row["Time in ms"])
+        #     response['request_time_cdf'].append(row)
+        # if not response['request_time_cdf']:
+        #     print('Bee %i lost sight of the target (connection timed out reading csv).' % params['i'])
+        #     return None
+        #
+        # print("Bee {:d} is out of ammo.".format(params['i']))
+        #
+        # client.close()
+        #
+        # return response
     except socket.error as e:
         return e
     except Exception as e:

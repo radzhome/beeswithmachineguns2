@@ -18,14 +18,14 @@ h2. Dependencies
 h2. Installation for users
 
 <pre>
-pip install https://github.com/radzhome/beeswithmachineguns/archive/master.zip
+pip install https://github.com/radzhome/beeswithmachineguns2/archive/master.zip
 </pre>
 
 h2. Installation for developers (w/ virtualenv + virtualenvwrapper)
 
 <pre>
 git clone git://github.com/radzhome/beeswithmachineguns2.git
-cd beeswithmachineguns
+cd beeswithmachineguns2
 mkvirtualenv --no-site-packages beesenv
 easy_install pip
 pip install -r requirements.txt
@@ -996,7 +996,7 @@ Response Codes:
 
 Mission Assessment: Target crushed bee offensive.
 The swarm is awaiting new orders.
-(trusty)rawm@localhost:~/beeswithmachineguns$
+(trusty)rawm@localhost:$
 </pre>
 
 
