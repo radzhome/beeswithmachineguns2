@@ -79,9 +79,9 @@ commands:
     up_group.add_option('-z', '--zone',  metavar="ZONE",  nargs=1,
                         action='store', dest='zone', type='string', default='us-east-1d',
                         help="The availability zone to start the instances in (default: us-east-1d).")
-    up_group.add_option('-i', '--instance',  metavar="INSTANCE",  nargs=1,
-                        action='store', dest='instance', type='string', default='ami-ff17fb96',
-                        help="The instance-id to use for each server from (default: ami-ff17fb96).")
+    up_group.add_option('-i', '--image', '--ami-id', metavar="IMAGE",  nargs=1,
+                        action='store', dest='image', type='string', default=None,
+                        help="The ami-id (image) to use for each ec2 instance (default: None - ECS AMI).")
     up_group.add_option('-t', '--type',  metavar="TYPE",  nargs=1,
                         action='store', dest='type', type='string', default='t3.micro',
                         help="The instance-type to use for each server (default: t3.micro).")
@@ -96,7 +96,7 @@ commands:
                         help="The maximum bid price per spot instance (default: None).")
     up_group.add_option('-x', '--tags', metavar="TAGS", nargs=1,
                         action='store', dest='tags', type='string', default=None,
-                        help="custome tags for bee instances")
+                        help="custom tags for bee instances")
 
     parser.add_option_group(up_group)
 
@@ -111,10 +111,10 @@ commands:
     attack_group.add_option('-K', '--keepalive', metavar="KEEP_ALIVE", nargs=0,
                             action='store', dest='keep_alive', type='string', default=False,
                             help="Keep-Alive connection.")
-    attack_group.add_option('-p', '--post-file',  metavar="POST_FILE",  nargs=1,
+    attack_group.add_option('-p', '--post-file', metavar="POST_FILE", nargs=1,
                             action='store', dest='post_file', type='string', default=False,
                             help="The POST file to deliver with the bee's payload.")
-    attack_group.add_option('-m', '--mime-type',  metavar="MIME_TYPE",  nargs=1,
+    attack_group.add_option('-m', '--mime-type', metavar="MIME_TYPE", nargs=1,
                             action='store', dest='mime_type', type='string', default='text/plain',
                             help="The MIME type to send with the request.")
     attack_group.add_option('-n', '--number', metavar="NUMBER", nargs=1,
@@ -147,33 +147,35 @@ commands:
                                  "sting sequentially, 2: sting in parallel")
     attack_group.add_option('-S', '--seconds', metavar="SECONDS", nargs=1,
                             action='store', dest='seconds', type='int', default=60,
-                            help= "hurl only: The number of total seconds to attack the target (default: 60).")
+                            help="hurl only: The number of total seconds to attack the target (default: 60).")
     attack_group.add_option('-X', '--verb', metavar="VERB", nargs=1,
                             action='store', dest='verb', type='string', default='',
-                            help= "hurl only: Request command -HTTP verb to use -GET/PUT/etc. Default GET")
+                            help="hurl only: Request command -HTTP verb to use -GET/PUT/etc. Default GET")
     attack_group.add_option('-M', '--rate', metavar="RATE", nargs=1,
                             action='store', dest='rate', type='int',
-                            help= "hurl only: Max Request Rate.")
+                            help="hurl only: Max Request Rate.")
     attack_group.add_option('-a', '--threads', metavar="THREADS", nargs=1,
                             action='store', dest='threads', type='int', default=1,
-                            help= "hurl only: Number of parallel threads. Default: 1")
+                            help="hurl only: Number of parallel threads. Default: 1")
     attack_group.add_option('-f', '--fetches', metavar="FETCHES", nargs=1,
-                            action='store', dest='fetches', type='int', 
-                            help= "hurl only: Num fetches per instance.")
+                            action='store', dest='fetches', type='int',
+                            help="hurl only: Number of fetches per instance.")
     attack_group.add_option('-d', '--timeout', metavar="TIMEOUT", nargs=1,
                             action='store', dest='timeout', type='int',
-                            help= "hurl only: Timeout (seconds).")
+                            help="hurl only: Timeout (seconds).")
     attack_group.add_option('-E', '--send_buffer', metavar="SEND_BUFFER", nargs=1,
                             action='store', dest='send_buffer', type='int',
-                            help= "hurl only: Socket send buffer size.")
+                            help="hurl only: Socket send buffer size.")
     attack_group.add_option('-F', '--recv_buffer', metavar="RECV_BUFFER", nargs=1,
                             action='store', dest='recv_buffer', type='int',
-                            help= "hurl only: Socket receive buffer size.")
+                            help="hurl only: Socket receive buffer size.")
     # Optional
-    attack_group.add_option('-T', '--tpr', metavar='TPR', nargs=1, action='store', dest='tpr', default=None, type='float',
+    attack_group.add_option('-T', '--tpr', metavar='TPR', nargs=1, action='store', dest='tpr', default=None,
+                            type='float',
                             help='The upper bounds for time per request. If this option is passed and the target is '
                                  'below the value a 1 will be returned with the report details (default: None).')
-    attack_group.add_option('-R', '--rps', metavar='RPS', nargs=1, action='store', dest='rps', default=None, type='float',
+    attack_group.add_option('-R', '--rps', metavar='RPS', nargs=1, action='store', dest='rps', default=None,
+                            type='float',
                             help='The lower bounds for request per second. If this option is passed and the target '
                                  'is above the value a 1 will be returned with the report details (default: None).')
     attack_group.add_option('-A', '--basic_auth', metavar='basic_auth', nargs=1, action='store', dest='basic_auth',
@@ -197,7 +199,7 @@ commands:
         parser.error('Please enter a command.')
 
     command = args[0]
-    #set time for in between threads
+    # set time for in between threads
     delay = 0.2
 
     if command == 'up':
@@ -211,25 +213,25 @@ commands:
 
         zone_len = options.zone.split(',')
         if len(zone_len) > 1:
-            if len(options.instance.split(',')) != len(zone_len):
+            if len(options.image.split(',')) != len(zone_len):
                 print("Your instance count does not match zone count")
                 sys.exit(1)
             else:
-                ami_list = [a for a in options.instance.split(',')]
+                ami_list = [a for a in options.image.split(',')]
                 zone_list = [z for z in zone_len]
                 # for each ami and zone set zone and instance
                 for tup_val in zip(ami_list, zone_list):
-                    options.instance, options.zone = tup_val
+                    options.image, options.zone = tup_val
                     # running up()
                     threading.Thread(target=bees.up, args=(options.servers, options.group,
-                                                           options.zone, options.instance,
+                                                           options.zone, options.image,
                                                            options.type, options.login,
                                                            options.key, options.subnet,
                                                            options.tags, options.bid)).start()
                     # time allowed between threads
                     time.sleep(delay)
         else:
-            bees.up(options.servers, options.group, options.zone, options.instance, options.type, options.login,
+            bees.up(options.servers, options.group, options.zone, options.image, options.type, options.login,
                     options.key, options.subnet, options.tags, options.bid)
 
     elif command == 'attack':

@@ -1,9 +1,7 @@
 h4. Bees with Machine Guns!
 
-# TODO: default ami -> grab via boto3 api (describe_images)
 # TODO: install ab, hurl
 # TODO: Create own sg by default, with port 22 open
-# TODO: subnet? Should be optional?
 
 A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).
 
@@ -115,7 +113,7 @@ h4. Additions contributed Hurl integration and multi regional testing.
   *hurl* is an http server load tester similar to ab/siege/weighttp/wrk with support for multithreading, parallelism, ssl, url ranges, and an api-server for querying the running performance statistics.  *hurl* is primarily useful for benchmarking http server applications.
 For more information about *hurl* please visit https://github.com/VerizonDigital/hlx
 
-  Multi regional testing was added so user can call up multiple bees from different regions simultaneously. Users have the ability to “up”, “attack”, and  “down” instances from single command. “regions.json” file is supplied which contains public ami images with hurl pre installed for all regions.
+  Multi regional testing was added so user can call up multiple bees from different regions simultaneously. Users have the ability to “up”, “attack”, and  “down” instances from single command.
 
 
 *What kind of changes were made that's different from the old?*

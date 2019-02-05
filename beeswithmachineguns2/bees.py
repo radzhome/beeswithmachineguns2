@@ -19,6 +19,7 @@ import re
 import socket
 import sys
 import ast
+from operator import itemgetter
 IS_PY2 = sys.version_info.major == 2
 if IS_PY2:
     from urllib.request import urlopen, Request
@@ -33,8 +34,9 @@ import ssl
 from contextlib import contextmanager
 import traceback
 
-import boto.ec2
-import boto.exception
+import boto.ec2  # TODO: deprecated
+import boto.exception  # TODO: deprecated
+
 import boto3  # Converting to boto3 slowly.. starting with broken stuff
 import paramiko
 import json
@@ -43,6 +45,12 @@ import time
 
 
 STATE_FILENAME = os.path.expanduser('~/.bees2')  # Changing affects _get_existing_regions
+
+# ECS Optimized AMI to use, different per region. ID changes when an updated AMI is released.
+# Good choice for now as its regularly updated
+# https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
+AMI_NAME = 'amzn-ami-????.??.?-amazon-ecs-optimized' # 'amzn-ami-2018.03.l-amazon-ecs-optimized'
+
 
 # Utilities
 
@@ -161,8 +169,8 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     :param count: int, count
     :param group: str, security group
     :param zone: str, az
-    :param image_id: str, ami id
-    :param instance_type: 
+    :param image_id: str, ami id of image to use (optional)
+    :param instance_type: str, aws instance size i.e. t3.micro
     :param username: 
     :param key_name: 
     :param subnet: str, subnet id
@@ -214,12 +222,10 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         ec2_connection = boto.ec2.connect_to_region(region)
     except boto.exception.NoAuthHandlerFound as e:
         print("Authentication config error, perhaps you do not have a ~/.boto file with correct permissions?")
-        # print(e.message)
         raise e
         # return e
     except Exception as e:
         print("Unknown error occurred:")
-        # print(e.message)
         raise e
         # return e
 
@@ -233,6 +239,18 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     placement = None if 'gov' in zone else zone
     print("Placement: %s" % placement)
+
+    if not image_id:
+        ecs_amis = boto3_ec2_client.describe_images(
+            Filters=[
+                {'Name': 'name', 'Values': [AMI_NAME, ]},
+                {'Name': 'state', 'Values': ['available', ]}
+            ]
+        )
+        ecs_amis = ecs_amis.get('Images')
+        ecs_amis = sorted(ecs_amis, key=itemgetter('CreationDate'), reverse=True)
+        image_id = ecs_amis[0]['ImageId']
+    print("Image ID: %s" % image_id)
 
     if bid:
         # TODO: Not tested
@@ -304,9 +322,6 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         tags = ast.literal_eval(tags)
 
     try:
-        # tags_list = [{'Key': tag_key, 'Value': tag_value} for tag_key, tag_value in tags_dict.items()]
-        # ids = [instance['InstanceId'] for instance in ready_instances]
-        # ec2_connection.create_tags(ids, tags_dict)
         boto3_ec2_client.create_tags(Resources=[instance['InstanceId'] for instance in ready_instances], Tags=tags)
     except Exception as e:
         print("Unable to create tags:")
@@ -393,6 +408,8 @@ def report():
 def down(*mr_zone):
     """
     Shutdown the load testing server.
+    :param mr_zone:
+    :return:
     """
     def _check_to_down_it():
         """
@@ -406,7 +423,6 @@ def down(*mr_zone):
 
         print("Connecting to the hive.")
 
-        # ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
         boto3_session = boto3.Session()
         boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
@@ -417,7 +433,7 @@ def down(*mr_zone):
             print(terminated_instance_ids)
         except boto3_ec2_client.exceptions.ClientError as e:
             if 'do not exist' in str(e):
-                terminated_instance_ids = []
+                terminated_instance_ids = []  # TODO: Not used
 
         print("Stood down {} bees.".format(len(instance_ids)))
 
@@ -436,6 +452,10 @@ def _wait_for_spot_request_fulfillment(conn, requests, fulfilled_requests=None):
     Wait until all spot requests are fulfilled.
     Once all spot requests are fulfilled, return a
     list of corresponding spot instances.
+    :param conn:
+    :param requests:
+    :param fulfilled_requests:
+    :return:
     """
     # TODO: Use describe_instances, describe_spot_fleet_instances(
     # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html#EC2.Client.describe_spot_fleet_instances
@@ -461,6 +481,7 @@ def _sting(params):
     """
     Request the target URL for caching.
     Intended for use with multiprocessing.
+    :param params:
     """
     url = params['url']
     headers = params['headers']
@@ -519,6 +540,7 @@ def _attack(params):
     Test the target URL with requests.
 
     Intended for use with multiprocessing.
+    :param params:
     """
     print('Bee %i is joining the swarm.' % params['i'])
     client = _paramiko_connect(params)
@@ -575,7 +597,8 @@ def _attack(params):
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
         # Make sure we have ab
-        ab_install_command = 'sudo yum install httpd-tools -y'  # TODO Move to up, and poll until done, then ready, default ami user?
+        # TODO Move to up, and poll until done, then ready, default ami user?
+        ab_install_command = 'sudo yum install httpd-tools -y'
         client.exec_command(ab_install_command)
         time.sleep(5)  # Wait for install
 
@@ -650,6 +673,13 @@ def _attack(params):
 
 
 def _summarize_results(results, params, csv_filename):
+    """
+    Summarize results
+    :param results:
+    :param params:
+    :param csv_filename:
+    :return:
+    """
     summarized_results = dict()
     summarized_results['timeout_bees'] = [r for r in results if r is None]
     summarized_results['exception_bees'] = [r for r in results if type(r) == socket.error]
@@ -751,10 +781,15 @@ def _create_request_time_cdf_csv(results, complete_bees_params, request_time_cdf
 
 
 def _get_request_time_cdf(total_complete_requests, complete_bees):
-    # Recalculate the global cdf based on the csv files collected from
-    # ab. Can do this by sampling the request_time_cdfs for each of
-    # the completed bees in proportion to the number of
-    # complete_requests they have
+    """
+    Recalculate the global cdf based on the csv files collected from
+    ab. Can do this by sampling the request_time_cdfs for each of
+    the completed bees in proportion to the number of
+    complete_requests they have
+    :param total_complete_requests:
+    :param complete_bees:
+    :return:
+    """
     n_final_sample = 100
     sample_size = 100 * n_final_sample
     n_per_bee = [int(r['complete_requests'] / total_complete_requests * sample_size)
@@ -775,6 +810,8 @@ def _get_request_time_cdf(total_complete_requests, complete_bees):
 def _print_results(summarized_results):
     """
     Print summarized load-testing results.
+    :param summarized_results:
+    :return:
     """
     if summarized_results['exception_bees']:
         print("     %i of your bees didn't make it to the action. They might be taking a little longer than normal to"
@@ -829,6 +866,11 @@ def _print_results(summarized_results):
 def attack(url, n, c, **options):
     """
     Test the root url of this site.
+    :param url:
+    :param n:
+    :param c:
+    :param options:
+    :return:
     """
     username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
     headers = options.get('headers', '')
@@ -854,7 +896,6 @@ def attack(url, n, c, **options):
 
     print('Connecting to the hive.')
 
-    # ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
     boto3_session = boto3.Session()
     boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
@@ -961,7 +1002,15 @@ def attack(url, n, c, **options):
 def hurl_attack(url, n, c, **options):
     """
     Test the root url of this site.
+    :param url:
+    :param n:
+    :param c:
+    :param options:
+    :return:
     """
+    # TODO: Create a hurl binary for amazon linux that can use
+    raise NotImplementedError("This feature is disabled for now.")
+
     print(options.get('zone'))
     username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
     headers = options.get('headers', '')
@@ -1147,7 +1196,16 @@ def _hurl_attack(params):
     Test the target URL with requests.
 
     Intended for use with multiprocessing.
+
+    hurl:
+    https://github.com/VerizonDigital/hurl
+
+    :param params:
+    :return:
     """
+
+    # TODO: Create a hurl binary for amazon linux that can use
+    raise NotImplementedError("This feature is disabled for now.")
 
     print('Bee %i is joining the swarm.' % params['i'])
 
@@ -1178,7 +1236,7 @@ def _hurl_attack(params):
         if params['post_file']:
             pem_file_path=_get_pem_path(params['key_name'])
             scp_command = "scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:~/" \
-                         "".format((pem_file_path,params['post_file'], params['username'], params['instance_name']))
+                          "".format((pem_file_path,params['post_file'], params['username'], params['instance_name']))
             os.system(scp_command)
             options += ' -d ~/%s' % params['post_file']
 
@@ -1306,6 +1364,13 @@ def _hurl_attack(params):
 
 
 def _hurl_summarize_results(results, params, csv_filename):
+    """
+    Hurl results summary
+    :param results:
+    :param params:
+    :param csv_filename:
+    :return:
+    """
 
     summarized_results = defaultdict(int)
     summarized_results['timeout_bees'] = [r for r in results if r is None]
@@ -1412,6 +1477,8 @@ def _hurl_summarize_results(results, params, csv_filename):
 def _hurl_print_results(summarized_results):
     """
     Print summarized load-testing results.
+    :param summarized_results:
+    :return:
     """
     if summarized_results['exception_bees']:
         print(
