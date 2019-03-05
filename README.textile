@@ -209,7 +209,7 @@ Options:
                         (default: us-east-1d).
     -i INSTANCE, --instance=INSTANCE
                         The instance-id to use for each server from (default:
-                        ami-ff17fb96).
+                        ecs-ami instance for your region).
     -t TYPE, --type=TYPE
                         The instance-type to use for each server (default:
                         t3.micro).

@@ -49,7 +49,7 @@ STATE_FILENAME = os.path.expanduser('~/.bees2')  # Changing affects _get_existin
 # ECS Optimized AMI to use, different per region. ID changes when an updated AMI is released.
 # Good choice for now as its regularly updated
 # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
-AMI_NAME = 'amzn-ami-????.??.?-amazon-ecs-optimized' # 'amzn-ami-2018.03.l-amazon-ecs-optimized'
+AMI_NAME = 'amzn-ami-????.??.?-amazon-ecs-optimized'  # 'amzn-ami-2018.03.l-amazon-ecs-optimized'
 
 
 # Utilities
