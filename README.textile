@@ -1,11 +1,12 @@
 h4. Bees with Machine Guns!
 
-# TODO: install ab, hurl
-# TODO: Create own sg by default, with port 22 open
-
-A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).
+A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications) using tools like ab (primarily) and hurl.
 
 Also, retribution for "this shameful act":http://kottke.org/10/10/tiny-catapult-for-throwing-pies-at-bees against a proud hive.
+
+h2. TODO
+# TODO: hurl
+# TODO: Create own sg by default, with port 22 open
 
 h2. Dependencies
 
