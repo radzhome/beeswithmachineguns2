@@ -38,6 +38,7 @@ import boto.ec2  # TODO: deprecated
 import boto.exception  # TODO: deprecated
 
 import boto3  # Converting to boto3 slowly.. starting with broken stuff
+from botocore.exceptions import ClientError
 import paramiko
 import json
 from collections import defaultdict
@@ -106,7 +107,10 @@ def _delete_server_list(zone):
     :param zone:
     :return:
     """
-    os.remove(_get_new_state_file_name(zone))
+    try:
+        os.remove(_get_new_state_file_name(zone))
+    except IOError:
+        pass
 
 
 def _get_pem_path(key):
@@ -187,7 +191,14 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
 
     if existing_username == username and existing_key_name == key_name and existing_zone == zone:
-        existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+
+        try:
+            existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+        except ClientError:
+            print("Existing bees are invalid, cleaning up server list")
+            existing_reservations = []
+            _delete_server_list(zone)
+
         existing_instances = [instance for reservation in existing_reservations for instance in reservation['Instances']
                               if instance['State'] == 'running']
         # User, key and zone match existing values and instance ids are found on state file
@@ -331,7 +342,13 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     # instance_ids refers to existing ec2 instances, while ready_instances are the new ones just created in this run
     if instance_ids:
         # Add existing instances to ready instances if running
-        existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+        try:
+            existing_reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+        except ClientError:
+            print("Existing bees are invalid, cleaning up server list")
+            existing_reservations = []
+            _delete_server_list(zone)
+
         existing_instances = [instance for reservation in existing_reservations for instance in reservation['Instances']
                               if instance['State']['Name'] == 'running']
         list(map(ready_instances.append, existing_instances))
@@ -366,6 +383,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
         instance['PrivateIpAddress'] = private_ip
         instance_ids.append(instance['InstanceId'])
 
+        # TODO: Need to figure out how we can check they are initialized fully or not, keep waiting...
         print("Bee {}, private ip {} is ready for the attack. Make sure they all finished initializing first"
               "".format(instance['InstanceId'], instance['PrivateIpAddress']))
 
@@ -901,7 +919,13 @@ def attack(url, n, c, **options):
 
     print('Assembling bees.')
 
-    reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+    try:
+        reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+    except ClientError:
+        # reservations = []
+        print("bees: failed to assemble working bees.")
+        _delete_server_list(zone)
+        raise
 
     instances = []
 
