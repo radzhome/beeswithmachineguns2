@@ -131,6 +131,32 @@ def _get_region(zone):
     return zone if 'gov' in zone else zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
 
 
+def _get_subnet_id(connection, subnet_name):
+    """
+
+    :param connection:
+    :param subnet_name:
+    :return:
+    """
+    if not subnet_name:
+        print("WARNING: No subnet was specified.")
+        return
+
+    # Try by name
+    subnets = connection.describe_subnets(
+        Filters=[{'Name': 'tag:Name', 'Values': [subnet_name, ]}, ]
+    )
+    subnets = subnets['Subnets']
+
+    if not subnets:
+        # Try by id
+        subnets = connection.describe_security_groups(
+            Filters=[{'Name': 'subnet-id ', 'Values': [subnet_name, ]}, ]
+        )
+        subnets = subnets['Subnets']
+
+    return subnets[0]['SubnetId'] if subnets else None
+
 def _get_security_group_id(connection, security_group_name):
     """
     Takes a security group name and
@@ -146,12 +172,14 @@ def _get_security_group_id(connection, security_group_name):
         print('The bees need a security group to run under. Need to open a port from where you are to the target '
               'subnet.')
         return
+    # Try by name
     security_groups = connection.describe_security_groups(
         Filters=[{'Name': 'group-name', 'Values': [security_group_name, ]}, ]
     )
     security_groups = security_groups['SecurityGroups']
 
     if not security_groups:
+        # Try by id
         security_groups = connection.describe_security_groups(
             Filters=[{'Name': 'group-id', 'Values': [security_group_name, ]}, ]
         )
@@ -166,7 +194,6 @@ def _get_security_group_id(connection, security_group_name):
 
 # Methods
 
-# TODO: up brings up new bees every time now, does not account for running ones, file ok?
 def up(count, group, zone, image_id, instance_type, username, key_name, subnet, tags, bid=None):
     """
     Startup the load testing server.
@@ -244,9 +271,14 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     security_group_id = group if \
         group.lower().startswith('sg-') else _get_security_group_id(boto3_ec2_client, group)
     if security_group_id:
-        print("SubnetGroupId found: %s" % security_group_id)
+        print("SecurityGroupId found: %s" % security_group_id)
     else:
         raise Exception("Unable to find security group {}. Try specifying the subnet id.".format(group))
+
+    if subnet:
+        subnet = subnet if \
+            subnet.lower().startswith('subnet-') else _get_subnet_id(boto3_ec2_client, subnet)
+    print("SubnetId: %s" % subnet)
 
     placement = None if 'gov' in zone else zone
     print("Placement: %s" % placement)
@@ -391,7 +423,7 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     _write_server_list(username, key_name, zone, ready_instances)
 
-    print("The swarm has assembled %i bees." % len(ready_instances))
+    print("The swarm has {} bees assembled and ready.".format(len(ready_instances)))
 
 
 def report():
@@ -617,7 +649,7 @@ def _attack(params):
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
         # Make sure we can open many concurrent connections
-        print("Bee {} ({}) Increasing open file limit &  Installing ab.".format(params['i'], params['instance_name']))
+        print("Bee {} ({}) Increasing open file limit & installing ab.".format(params['i'], params['instance_name']))
         ulimit_command = 'ulimit -S -n 4096'
         client.exec_command(ulimit_command)
         time.sleep(1)
@@ -892,81 +924,29 @@ def _print_results(summarized_results):
         print('Mission Assessment: Swarm annihilated target.')
 
 
-def attack(url, n, c, **options):
+def _get_paramiko_conn_params(instances, url, options, username, key_name, headers,
+                              contenttype, cookies, ciphers, connections_per_instance,
+                              requests_per_instance, sting):
     """
-    Test the root url of this site.
-    :param url:
-    :param n:
-    :param c:
+    Gets paramiko conn params for ab
+    :param instances: dict, from ['Reservations']['Instances'] from describe_instances
+    :param url: string, list of urls, comma spliced
     :param options:
+    :param username:
+    :param key_name:
+    :param headers:
+    :param contenttype:
+    :param cookies:
+    :param ciphers:
+    :param connections_per_instance:
+    :param requests_per_instance:
     :return:
     """
-    username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
-    headers = options.get('headers', '')
-    contenttype = options.get('contenttype', '')
-    csv_filename = options.get("csv_filename", '')
-    cookies = options.get('cookies', '')
-    ciphers = options.get('ciphers', '')
-    post_file = options.get('post_file', '')
-    keep_alive = options.get('keep_alive', False)
-    basic_auth = options.get('basic_auth', '')
-    sting = options.get('sting', 1)
-
-    if csv_filename:
-        try:
-            stream = open(csv_filename, 'w')
-        except IOError as e:
-            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different "
-                          "filename and try again." % csv_filename)
-
-    if not instance_ids:
-        print('No bees are ready to attack.')
-        return
-
-    print('Connecting to the hive.')
-
-    boto3_session = boto3.Session()
-    boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
-
-    print('Assembling bees.')
-
-    try:
-        reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
-    except ClientError:
-        # reservations = []
-        print("bees: failed to assemble working bees.")
-        _delete_server_list(zone)
-        raise
-
-    instances = []
-
-    for reservation in reservations:
-        instances.extend(reservation['Instances'])
-
-    instance_count = len(instances)
-
-    if n < instance_count * 2:
-        print("bees: error: the total number of requests must be at least %d (2x num. instances)"
-              "".format((instance_count * 2)))
-        return
-    if c < instance_count:
-        print('bees: error: the number of concurrent requests must be at least %d (num. instances)' % instance_count)
-        return
-    if n < c:
-        print("bees: error: the number of concurrent requests ({:d}) must be at most the same as number of "
-              "requests ({:d})".format(c, n))
-        return
-
-    requests_per_instance = int(old_div(float(n), instance_count))
-    connections_per_instance = int(old_div(float(c), instance_count))
-
-    print("Each of {:d} bees will fire {} rounds, {} at a time.".format(instance_count, requests_per_instance,
-                                                                        connections_per_instance))
-
     params = []
 
     urls = url.split(",")
     url_count = len(urls)
+    instance_count = len(instances)
 
     if url_count > instance_count:
         print("bees: warning: more urls given than instances. last urls will be ignored.")
@@ -1002,11 +982,195 @@ def attack(url, n, c, **options):
             _sting(param)
     elif sting == 2:
         print('Stinging URL in parallel so it will be cached for the attack.')
-        url_used_count = min(url_count-1, instance_count-1)
-        pool = Pool(url_used_count+1)
-        pool.map(_sting, params[:url_used_count-1])
+        url_used_count = min(url_count - 1, instance_count - 1)
+        pool = Pool(url_used_count + 1)
+        pool.map(_sting, params[:url_used_count - 1])
     else:
         print('Stinging URL skipped.')
+
+    return params
+
+
+def _is_valid_concurrency_to_instances(n, c, instance_count):
+    """
+    Validates concurrency settings ok for number of instances
+    :param n:
+    :param c:
+    :param instance_count:
+    :return:
+    """
+    if n < instance_count * 2:
+        print("bees: error: the total number of requests must be at least %d (2x num. instances)"
+              "".format((instance_count * 2)))
+        return False
+    if c < instance_count:
+        print('bees: error: the number of concurrent requests must be at least %d (num. instances)' % instance_count)
+        return False
+    if n < c:
+        print("bees: error: the number of concurrent requests ({:d}) must be at most the same as number of "
+              "requests ({:d})".format(c, n))
+        return False
+
+    return True
+
+
+# TODO: create _attack_wrk2 and _summarize_results_wrk2
+# def attack_wrk2(url, n, c, **options):
+#     """
+#
+#     :param url:
+#     :param n:
+#     :param c:
+#     :param options:
+#     :return:
+#     """
+#
+#     username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
+#     headers = options.get('headers', '')
+#     contenttype = options.get('contenttype', '')
+#     csv_filename = options.get("csv_filename", '')
+#     cookies = options.get('cookies', '')
+#     ciphers = options.get('ciphers', '')
+#     # post_file = options.get('post_file', '')
+#     # keep_alive = options.get('keep_alive', False)
+#     # basic_auth = options.get('basic_auth', '')
+#     sting = options.get('sting', 1)
+#
+#     if csv_filename:
+#         try:
+#             stream = open(csv_filename, 'w')
+#         except IOError as e:
+#             raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different "
+#                           "filename and try again." % csv_filename)
+#
+#     if not instance_ids:
+#         print('No bees are ready to attack.')
+#         return
+#
+#     print('Connecting to the hive.')
+#
+#     boto3_session = boto3.Session()
+#     boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
+#
+#     print('Assembling bees.')
+#
+#     try:
+#         reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+#     except ClientError:
+#         print("bees: failed to assemble working bees.")
+#         _delete_server_list(zone)
+#         raise
+#
+#     instances = []
+#
+#     for reservation in reservations:
+#         instances.extend(reservation['Instances'])
+#
+#     instance_count = len(instances)
+#
+#     if not _is_valid_concurrency_to_instances(n, c, instance_count):
+#         return
+#
+#     requests_per_instance = int(old_div(float(n), instance_count))
+#     connections_per_instance = int(old_div(float(c), instance_count))
+#
+#     print("Each of {:d} bees will fire {} rounds, {} at a time.".format(instance_count, requests_per_instance,
+#                                                                         connections_per_instance))
+#
+#     params = _get_paramiko_conn_params(instances, url, options, username, key_name, headers,
+#                                        contenttype, cookies, ciphers, connections_per_instance,
+#                                        requests_per_instance, sting)
+#
+#     print('Organizing the swarm.')
+#     # Spin up processes for connecting to EC2 instances
+#     pool = Pool(len(params))
+#
+#     try:
+#         results = pool.map(_attack_wrk2, params)
+#     except Exception as e:
+#         print("Unable to connect to bees instances, are they all accessible?")
+#         raise e
+#
+#     summarized_results = _summarize_results_wrk2(results, params, csv_filename)
+#     print('Offensive complete.')
+#     _print_results(summarized_results)
+#
+#     print('The swarm is awaiting new orders.')
+#
+#     if 'performance_accepted' in summarized_results:
+#         if summarized_results['performance_accepted'] is False:
+#             print("Your targets performance tests did not meet our standard.")
+#             sys.exit(1)
+#         else:
+#             print('Your targets performance tests meet our standards, the Queen sends her regards.')
+#             sys.exit(0)
+
+
+def attack(url, n, c, **options):
+    """
+    Test the root url of this site.
+    :param url:
+    :param n:
+    :param c:
+    :param options:
+    :return:
+    """
+    username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
+    headers = options.get('headers', '')
+    contenttype = options.get('contenttype', '')
+    csv_filename = options.get("csv_filename", '')
+    cookies = options.get('cookies', '')
+    ciphers = options.get('ciphers', '')
+    # post_file = options.get('post_file', '')
+    # keep_alive = options.get('keep_alive', False)
+    # basic_auth = options.get('basic_auth', '')
+    sting = options.get('sting', 1)
+
+    if csv_filename:
+        try:
+            stream = open(csv_filename, 'w')
+        except IOError as e:
+            raise IOError("Specified csv_filename='%s' is not writable. Check permissions or specify a different "
+                          "filename and try again." % csv_filename)
+
+    if not instance_ids:
+        print('No bees are ready to attack.')
+        return
+
+    print('Connecting to the hive.')
+
+    boto3_session = boto3.Session()
+    boto3_ec2_client = boto3_session.client('ec2', region_name=_get_region(zone))
+
+    print('Assembling bees.')
+
+    try:
+        reservations = boto3_ec2_client.describe_instances(InstanceIds=instance_ids)['Reservations']
+    except ClientError:
+        # reservations = []
+        print("bees: failed to assemble working bees.")
+        _delete_server_list(zone)
+        raise
+
+    instances = []
+
+    for reservation in reservations:
+        instances.extend(reservation['Instances'])
+
+    instance_count = len(instances)
+
+    if not _is_valid_concurrency_to_instances(n, c, instance_count):
+        return
+
+    requests_per_instance = int(old_div(float(n), instance_count))
+    connections_per_instance = int(old_div(float(c), instance_count))
+
+    print("Each of {:d} bees will fire {} rounds, {} at a time.".format(instance_count, requests_per_instance,
+                                                                        connections_per_instance))
+
+    params = _get_paramiko_conn_params(instances, url, options, username, key_name, headers,
+                                       contenttype, cookies, ciphers, connections_per_instance,
+                                       requests_per_instance, sting)
 
     print('Organizing the swarm.')
     # Spin up processes for connecting to EC2 instances
@@ -1106,6 +1270,7 @@ def hurl_attack(url, n, c, **options):
 
     params = []
 
+    # These conn params are different from ab ones
     for i, instance in enumerate(instances):
         params.append({
             'i': i,
