@@ -560,8 +560,9 @@ def _attack(params):
     Intended for use with multiprocessing.
     :param params:
     """
-    print('Bee %i is joining the swarm.' % params['i'])
+    print('Bee {} is joining the swarm.'.format(params['i']))
     client = _paramiko_connect(params)
+    print('Bee {} joined the swarm.'.format(params['i']))
 
     try:
         print("Bee {:d} is firing her machine gun. Bang bang!".format(params['i']))
@@ -581,7 +582,8 @@ def _attack(params):
         if params['csv_filename']:
             options += ' -e %(csv_filename)s' % params
         else:
-            print('Bee %i lost sight of the target (connection timed out creating csv_filename).' % params['i'])
+            print("Bee {} ({}) lost sight of the target (connection timed out creating csv_filename)."
+                  "".format(params['i'], params['instance_name']))
             return None
 
         if params['post_file']:
@@ -614,6 +616,11 @@ def _attack(params):
             ['Time per request:', 'Requests per second: ', 'Failed requests: ', 'Connect: ', 'Receive: ',
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
+        # Make sure we can open many concurrent connections
+        print("Bee {} ({}) Increasing open file limit &  Installing ab.".format(params['i'], params['instance_name']))
+        ulimit_command = 'ulimit -S -n 4096'
+        client.exec_command(ulimit_command)
+        time.sleep(1)
         # Make sure we have ab
         # TODO Move to up, and poll until done, then ready, default ami user?
         ab_install_command = 'sudo yum install httpd-tools -y'
@@ -624,7 +631,7 @@ def _attack(params):
         # default image set to ? ami-0f552e0a86f08b660
         benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
                             '2>/dev/null | grep -F "%(output_filter_patterns)s"' % params
-        print(benchmark_command)
+        print("Benchmark command is: {}".format(benchmark_command))
         stdin, stdout, stderr = client.exec_command(benchmark_command)
 
         response = {}
@@ -634,7 +641,10 @@ def _attack(params):
         ms_per_request_search = re.search('Time\ per\ request:\s+([0-9.]+)\ \[ms\]\ \(mean\)', ab_results)
 
         if not ms_per_request_search:
-            print('Bee %i lost sight of the target (connection timed out running ab).' % params['i'])
+            print("Bee {} ({}) lost sight of the target (ab command failed).".format(params['i'],
+                                                                                     params['instance_name']))
+            print("Error is: {}. It could be that the bee cannot resolve the target or "
+                  "that the open file limit is reached (See ulimit -a).".format(stderr))
             return None
 
         requests_per_second_search = re.search('Requests\ per\ second:\s+([0-9.]+)\ \[#\/sec\]\ \(mean\)', ab_results)
@@ -674,7 +684,8 @@ def _attack(params):
             row["Time in ms"] = float(row["Time in ms"])
             response['request_time_cdf'].append(row)
         if not response['request_time_cdf']:
-            print('Bee %i lost sight of the target (connection timed out reading csv).' % params['i'])
+            print("Bee {} ({}) lost sight of the target (connection timed out reading csv)."
+                  "".format(params['i'], params['instance_name']))
             return None
 
         print('Bee %i is out of ammo.' % params['i'])
@@ -961,10 +972,13 @@ def attack(url, n, c, **options):
         print("bees: warning: more urls given than instances. last urls will be ignored.")
 
     for i, instance in enumerate(instances):
+        # PrivateDnsName is useless if you can't resolve the private ip from it.
+        instance_name = instance['PublicDnsName'] or instance['PrivateIpAddress']
+
         params.append({
             'i': i,
             'instance_id': instance['InstanceId'],
-            'instance_name': instance['PrivateIpAddresses'] if not instance['PrivateDnsName'] else instance['PrivateDnsName'],
+            'instance_name': instance_name,
             'url': urls[i % url_count],
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -1254,7 +1268,8 @@ def _hurl_attack(params):
         if params['csv_filename']:
             options += ' -o %(csv_filename)s' % params
         else:
-            print('Bee %i lost sight of the target (connection timed out creating csv_filename).' % params['i'])
+            print("Bee {} ({}) lost sight of the target (connection timed out creating csv_filename)."
+                  "".format(params['i'], params['instance_name']))
             return None
 
         if params['post_file']:
