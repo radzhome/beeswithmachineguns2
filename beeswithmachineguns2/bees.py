@@ -385,7 +385,9 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
                               if instance['State']['Name'] == 'running']
         list(map(ready_instances.append, existing_instances))
         dead_instances = [i for i in instance_ids if i not in [j['InstanceId'] for j in existing_instances]]
-        list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
+        if dead_instances and instance_ids:
+            # TODO: cleanup dead instances from server list?
+            list(map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances]))
 
     print("Waiting for bees to load their machine guns...")
 
@@ -648,19 +650,32 @@ def _attack(params):
             ['Time per request:', 'Requests per second: ', 'Failed requests: ', 'Connect: ', 'Receive: ',
              'Length: ', 'Exceptions: ', 'Complete requests: ', 'HTTP/1.1'])
 
-        # Make sure we can open many concurrent connections
-        print("Bee {} ({}) Increasing open file limit & installing ab.".format(params['i'], params['instance_name']))
-        ulimit_command = 'ulimit -S -n 4096'
-        client.exec_command(ulimit_command)
-        time.sleep(1)
         # Make sure we have ab
         # TODO Move to up, and poll until done, then ready, default ami user?
         ab_install_command = 'sudo yum install httpd-tools -y'
         client.exec_command(ab_install_command)
         time.sleep(5)  # Wait for install
 
+        # TODO: bee is going down
+        # Traceback (most recent call last):
+        #   File "/usr/local/Cellar/python/3.7.2/Frameworks/Python.framework/Versions/3.7/lib/python3.7/threading.py", line 917, in _bootstrap_inner
+        #     self.run()
+        #   File "/usr/local/Cellar/python/3.7.2/Frameworks/Python.framework/Versions/3.7/lib/python3.7/threading.py", line 865, in run
+        #     self._target(*self._args, **self._kwargs)
+        #   File "/usr/local/lib/python3.7/site-packages/beeswithmachineguns2/bees.py", line 1173, in attack
+        #     requests_per_instance, sting)
+        #   File "/usr/local/lib/python3.7/site-packages/beeswithmachineguns2/bees.py", line 956, in _get_paramiko_conn_params
+        #     instance_name = instance['PublicDnsName'] or instance['PrivateIpAddress']
+        # KeyError: 'PrivateIpAddress'
+
+        # Make sure we can open many concurrent connections
+        # print("Bee {} ({}) Increasing open file limit & installing ab.".format(params['i'], params['instance_name']))
+        # ulimit_command = 'ulimit -S -n 4096'  # TODO: change permantenly
+        # client.exec_command(ulimit_command)
+        # time.sleep(1)
         # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
         # default image set to ? ami-0f552e0a86f08b660
+        # benchmark_command = 'ulimit -S -n 4096 && ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
         benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
                             '2>/dev/null | grep -F "%(output_filter_patterns)s"' % params
         print("Benchmark command is: {}".format(benchmark_command))
