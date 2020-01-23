@@ -107,7 +107,7 @@ commands:
     # Required
     attack_group.add_option('-u', '--url', metavar="URL", nargs=1,
                             action='store', dest='url', type='string',
-                            help="URL of the target to attack.")
+                            help="URL of the target to attack or many urls comma spliced.")
     attack_group.add_option('-K', '--keepalive', metavar="KEEP_ALIVE", nargs=0,
                             action='store', dest='keep_alive', type='string', default=False,
                             help="Keep-Alive connection.")

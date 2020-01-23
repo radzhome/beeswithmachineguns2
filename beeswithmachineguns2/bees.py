@@ -675,8 +675,8 @@ def _attack(params):
         # time.sleep(1)
         # https://www.thatsgeeky.com/2011/11/installing-apachebench-without-apache-on-amazons-linux/
         # default image set to ? ami-0f552e0a86f08b660
-        # benchmark_command = 'ulimit -S -n 4096 && ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
-        benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
+        # benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
+        benchmark_command = 'ulimit -S -n 4096 && ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s" ' \
                             '2>/dev/null | grep -F "%(output_filter_patterns)s"' % params
         print("Benchmark command is: {}".format(benchmark_command))
         stdin, stdout, stderr = client.exec_command(benchmark_command)
@@ -1228,7 +1228,7 @@ def hurl_attack(url, n, c, **options):
     # TODO: Create a hurl binary for amazon linux that can use
     raise NotImplementedError("This feature is disabled for now.")
 
-    print(options.get('zone'))
+    # print(options.get('zone'))
     username, key_name, zone, instance_ids = _read_server_list(options.get('zone'))
     headers = options.get('headers', '')
     contenttype = options.get('contenttype', '')
@@ -1306,15 +1306,15 @@ def hurl_attack(url, n, c, **options):
             'rps': options.get('rps'),
             'basic_auth': options.get('basic_auth'),
             'seconds': options.get('seconds'),
-            'rate' : options.get('rate'),
-            'long_output' : options.get('long_output'),
-            'responses_per' : options.get('responses_per'),
-            'verb' : options.get('verb'),
-            'threads' : options.get('threads'),
-            'fetches' : options.get('fetches'),
-            'timeout' : options.get('timeout'),
-            'send_buffer' : options.get('send_buffer'),
-            'recv_buffer' : options.get('recv_buffer')
+            'rate': options.get('rate'),
+            'long_output': options.get('long_output'),
+            'responses_per': options.get('responses_per'),
+            'verb': options.get('verb'),
+            'threads': options.get('threads'),
+            'fetches': options.get('fetches'),
+            'timeout': options.get('timeout'),
+            'send_buffer': options.get('send_buffer'),
+            'recv_buffer': options.get('recv_buffer')
         })
 
     print('Stinging URL so it will be cached for the attack.')
@@ -1396,10 +1396,13 @@ def _paramiko_connect(params):
 
     if not os.path.isfile(pem_path):
         client.load_system_host_keys()
-        client.connect(params['instance_name'],
-                       username=params['username'],
-                       timeout=10
-                       )
+        try:
+            client.connect(params['instance_name'],
+                           username=params['username'],
+                           timeout=10
+                           )
+        except paramiko.ssh_exception.AuthenticationException:
+            raise Exception("Pem key {} not found, all other authentication methods failed".format(pem_path))
     else:
         client.connect(
             params['instance_name'],
